@@ -191,7 +191,7 @@ impl App {
                         }
                         Err(e) => {
                             // Check if this is a boundary error (end of execution) or a real runtime error
-                            if let RuntimeError::Generic { message, .. } = &e {
+                            if let RuntimeError::HistoryOperationFailed { message, .. } = &e {
                                 if message == "Reached end of execution" {
                                     // Just stop playing, don't set error state
                                     self.is_playing = false;
@@ -470,7 +470,7 @@ impl App {
             }
             Err(e) => {
                 // Check if this is a boundary error (end of execution) or a real runtime error
-                if let RuntimeError::Generic { message, .. } = &e {
+                if let RuntimeError::HistoryOperationFailed { message, .. } = &e {
                     if message == "Reached end of execution" {
                         // This is just a boundary condition, not a real error
                         self.status_message = message.clone();
@@ -522,7 +522,7 @@ impl App {
             }
             Err(e) => {
                 // Check if this is a boundary error (end of execution) or a real runtime error
-                if let RuntimeError::Generic { message, .. } = &e {
+                if let RuntimeError::HistoryOperationFailed { message, .. } = &e {
                     if message == "Reached end of execution" {
                         // This is just a boundary condition, not a real error
                         self.status_message = message.clone();
