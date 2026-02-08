@@ -1,0 +1,8 @@
+[package]
+name = "crustty"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ratatui = "0.28"
+crossterm = "0.28"
