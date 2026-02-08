@@ -1,8 +1,8 @@
 [package]
 name = "crustty"
-version = "0.1.0"
+version = "0.2.1"
 edition = "2021"
-authors = ["Sean Yang <aicheye@users.noreply.github.com>"]
+authors = ["Sean Yang <sean@seanyang.me>"]
 description = "A time-travel C interpreter with memory visualization"
 license = "MIT"
 repository = "https://github.com/aicheye/crustty"
