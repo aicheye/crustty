@@ -179,10 +179,9 @@ impl App {
             // Handle auto-play mode
             if self.is_playing {
                 // Stop playing if we hit an error
-                if self.error_state.is_some() {
+                if let Some(error) = &self.error_state {
                     self.is_playing = false;
-                    self.status_message =
-                        format!("Stopped: {}", self.error_state.as_ref().unwrap().message());
+                    self.status_message = format!("Stopped: {}", error.message());
                 } else if self.last_play_time.elapsed() >= Duration::from_secs(1) {
                     // Try to step forward
                     match self.interpreter.step_forward() {
