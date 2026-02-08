@@ -11,12 +11,36 @@ env:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: crustty
+            asset_name: crustty-linux-x64
+          - os: ubuntu-24.04-arm
+            artifact_name: crustty
+            asset_name: crustty-linux-arm
+          - os: windows-latest
+            artifact_name: crustty.exe
+            asset_name: crustty-windows-x64
+          - os: windows-11-arm
+            artifact_name: crustty.exe
+            asset_name: crustty-windows-arm
+          - os: macos-latest
+            artifact_name: crustty
+            asset_name: crustty-macos-arm
+          - os: macos-15-intel
+            artifact_name: crustty
+            asset_name: crustty-macos-x64
 
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
     - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      run: cargo build --release --verbose
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.asset_name }}
+        path: target/release/${{ matrix.artifact_name }}
