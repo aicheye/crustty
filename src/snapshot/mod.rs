@@ -46,7 +46,7 @@ impl MockTerminal {
                 // Split by newlines to handle multiple prints from same source line
                 let mut result: Vec<String> = tl.text.split('\n').map(|s| s.to_string()).collect();
                 // Remove trailing empty string if text ended with newline
-                if result.last().map_or(false, |s| s.is_empty()) {
+                if result.last().is_some_and(|s| s.is_empty()) {
                     result.pop();
                 }
                 result
