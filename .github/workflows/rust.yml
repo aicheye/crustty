@@ -15,22 +15,22 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact_name: crustty
+            artifact_name: crustty-linux-x64
             asset_name: crustty-linux-x64
           - os: ubuntu-24.04-arm
-            artifact_name: crustty
+            artifact_name: crustty-linux-arm
             asset_name: crustty-linux-arm
           - os: windows-latest
-            artifact_name: crustty.exe
+            artifact_name: crustty-windows-x64.exe
             asset_name: crustty-windows-x64
           - os: windows-11-arm
-            artifact_name: crustty.exe
+            artifact_name: crustty-windows-arm.exe
             asset_name: crustty-windows-arm
           - os: macos-latest
-            artifact_name: crustty
+            artifact_name: crustty-macos-arm
             asset_name: crustty-macos-arm
           - os: macos-15-intel
-            artifact_name: crustty
+            artifact_name: crustty-macos-x64
             asset_name: crustty-macos-x64
 
     runs-on: ${{ matrix.os }}
@@ -44,3 +44,13 @@ jobs:
       with:
         name: ${{ matrix.asset_name }}
         path: target/release/${{ matrix.artifact_name }}
+
+  combine-artifacts:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Merge Artifacts
+      uses: actions/upload-artifact/merge@v4
+      with:
+        name: crustty-all-platforms
+        pattern: crustty-*
