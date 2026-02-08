@@ -417,6 +417,19 @@ impl Interpreter {
         }
     }
 
+    /// Step backward over: rewind until execution depth returns to current level or lower
+    pub fn step_back_over(&mut self) -> Result<(), RuntimeError> {
+        let starting_depth = self.execution_depth;
+
+        loop {
+            self.step_backward()?;
+
+            if self.execution_depth <= starting_depth {
+                return Ok(());
+            }
+        }
+    }
+
     // ========== Getter methods for UI ==========
 
     pub fn current_location(&self) -> SourceLocation {
