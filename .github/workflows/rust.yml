@@ -14,7 +14,11 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  pre-commit:
+    uses: ./.github/workflows/pre-commit.yml
+
   build:
+    needs: pre-commit
     strategy:
       matrix:
         include:
