@@ -346,6 +346,11 @@ impl App {
                 self.is_playing = false;
                 self.step_over();
             }
+            KeyCode::Char('a') | KeyCode::Char('A') => {
+                // Step back over (inverse of step over)
+                self.is_playing = false;
+                self.step_back_over();
+            }
             KeyCode::Tab => {
                 self.focused_pane = self.focused_pane.next();
             }
@@ -524,6 +529,39 @@ impl App {
                 // Check if this is a boundary error (end of execution) or a real runtime error
                 if let RuntimeError::HistoryOperationFailed { message, .. } = &e {
                     if message == "Reached end of execution" {
+                        // This is just a boundary condition, not a real error
+                        self.status_message = message.clone();
+                        return;
+                    }
+                }
+
+                // Real runtime error - set error state
+                self.error_state = Some(ErrorState::RuntimeError(e.clone()));
+                self.status_message = format!("Error: {}", e);
+            }
+        }
+    }
+
+    /// Step back over: inverse of step over
+    fn step_back_over(&mut self) {
+        // Don't allow stepping if there's any error - just show the error message
+        if let Some(error) = &self.error_state {
+            self.status_message = error.message();
+            return;
+        }
+
+        match self.interpreter.step_back_over() {
+            Ok(()) => {
+                self.status_message = "Stepped back over".to_string();
+                // Auto-scroll terminal to bottom
+                self.terminal_scroll = usize::MAX;
+            }
+            Err(e) => {
+                // Check if this is a boundary error (start of execution) or a real runtime error
+                if let RuntimeError::HistoryOperationFailed { message, .. } = &e {
+                    if message == "Reached start of execution"
+                        || message == "Already at the beginning of execution"
+                    {
                         // This is just a boundary condition, not a real error
                         self.status_message = message.clone();
                         return;
