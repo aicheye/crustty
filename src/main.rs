@@ -12,12 +12,14 @@ use std::path::Path;
 
 use crossterm::{
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{Terminal, backend::CrosstermBackend};
+use ratatui::{backend::CrosstermBackend, Terminal};
 
 use interpreter::engine::Interpreter;
-use parser::parser::Parser;
+use parser::ast::Program;
+use parser::parse::Parser;
+use ui::app::ErrorState;
 use ui::App;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
-        let program_name = args.get(0).map(|s| s.as_str()).unwrap_or("crustty");
+        let program_name = args.first().map(|s| s.as_str()).unwrap_or("crustty");
         eprintln!("Error: No input file provided");
         eprintln!();
         eprintln!("Usage: {} <file.c>", program_name);
@@ -51,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Error: File '{}' not found", test_file);
         eprintln!(
             "Usage: {} [file.c]",
-            args.get(0).map(|s| s.as_str()).unwrap_or("crustty")
+            args.first().map(|s| s.as_str()).unwrap_or("crustty")
         );
         std::process::exit(1);
     }
@@ -61,41 +63,56 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Parse the source code
     eprintln!("Parsing {}...", test_file);
-    let mut parser = match Parser::new(&source) {
-        Ok(parser) => parser,
+    let (program, parse_error) = match Parser::new(&source) {
+        Ok(mut parser) => match parser.parse_program() {
+            Ok(prog) => {
+                eprintln!(
+                    "Parsed successfully. Found {} top-level declarations.",
+                    prog.nodes.len()
+                );
+                (prog, None)
+            }
+            Err(e) => {
+                eprintln!("Parser error: {}", e);
+                eprintln!("Entering TUI to show error...");
+                // Create empty program and store error
+                let error = ErrorState::ParseError {
+                    message: e.message.clone(),
+                    location: e.location,
+                };
+                (Program { nodes: Vec::new() }, Some(error))
+            }
+        },
         Err(e) => {
-            eprintln!("Parser error: {}", e);
-            std::process::exit(1);
+            eprintln!("Parser initialization error: {}", e);
+            eprintln!("Entering TUI to show error...");
+            // Create empty program and store error
+            let error = ErrorState::ParseError {
+                message: e.message.clone(),
+                location: e.location,
+            };
+            (Program { nodes: Vec::new() }, Some(error))
         }
     };
-
-    let program = match parser.parse_program() {
-        Ok(program) => program,
-        Err(e) => {
-            eprintln!("Parser error: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    eprintln!(
-        "Parsed successfully. Found {} top-level declarations.",
-        program.nodes.len()
-    );
 
     // Create interpreter with snapshot memory limit (1 GB)
     let snapshot_limit = 1024 * 1024 * 1024;
     let mut interpreter = Interpreter::new(program, snapshot_limit);
 
     // Run execution to build history
-    eprintln!("Executing program...");
-    match interpreter.run() {
-        Ok(()) => {
-            eprintln!("Execution completed successfully.");
-            eprintln!("Total snapshots: {}", interpreter.total_snapshots());
-        }
-        Err(e) => {
-            eprintln!("Runtime error: {:?}", e);
-            eprintln!("Entering TUI with partial execution history...");
+    // Note: We intentionally don't pass runtime errors to the App initially.
+    // The error will be shown when the user steps forward to the line where it occurred.
+    if parse_error.is_none() {
+        eprintln!("Executing program...");
+        match interpreter.run() {
+            Ok(()) => {
+                eprintln!("Execution completed successfully.");
+                eprintln!("Total snapshots: {}", interpreter.total_snapshots());
+            }
+            Err(e) => {
+                eprintln!("Runtime error: {:?}", e);
+                eprintln!("Error will be shown when stepping to the error line in TUI...");
+            }
         }
     }
 
@@ -112,7 +129,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     // Create and run app
-    let mut app = App::new(interpreter, source);
+    // Only show parse errors initially; runtime errors will appear when stepping to them
+    let mut app = if let Some(error) = parse_error {
+        App::new_with_error(interpreter, source, error)
+    } else {
+        App::new(interpreter, source)
+    };
     let res = app.run(&mut terminal);
 
     // Restore terminal

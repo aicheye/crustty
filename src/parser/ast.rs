@@ -1,4 +1,5 @@
-// AST (Abstract Syntax Tree) definitions for the C interpreter
+#![allow(dead_code)] // Complete AST definition, not all variants/fields currently used
+                     // AST (Abstract Syntax Tree) definitions for the C interpreter
 
 /// Unique identifier for AST nodes, used for tracking execution position
 pub type NodeId = usize;

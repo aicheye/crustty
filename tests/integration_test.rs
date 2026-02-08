@@ -1,7 +1,7 @@
 // Integration tests for the C interpreter
 
 use crustty::interpreter::engine::Interpreter;
-use crustty::parser::parser::Parser;
+use crustty::parser::parse::Parser;
 
 #[test]
 fn test_simple_arithmetic() {
@@ -439,8 +439,7 @@ fn test_reverse_execution_preserves_state() {
     // Step forward to same point
     while interpreter.step_forward().is_ok() {}
 
-    // State should be consistent (just verify it doesn't panic/error)
-    assert!(true, "Successfully stepped forward and backward");
+    // State should be consistent - test passes if we reach here without panicking
 }
 
 // ================== CONVERTED C FILE TESTS ==================
