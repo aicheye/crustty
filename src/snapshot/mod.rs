@@ -40,7 +40,18 @@ impl MockTerminal {
 
     /// Get all lines as a vector of strings
     pub fn get_output(&self) -> Vec<String> {
-        self.lines.iter().map(|tl| tl.text.clone()).collect()
+        self.lines
+            .iter()
+            .flat_map(|tl| {
+                // Split by newlines to handle multiple prints from same source line
+                let mut result: Vec<String> = tl.text.split('\n').map(|s| s.to_string()).collect();
+                // Remove trailing empty string if text ended with newline
+                if result.last().map_or(false, |s| s.is_empty()) {
+                    result.pop();
+                }
+                result
+            })
+            .collect()
     }
 
     /// Clear all output
