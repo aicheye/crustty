@@ -263,7 +263,8 @@ impl Interpreter {
         body: &[AstNode],
         location: SourceLocation,
     ) -> Result<(), RuntimeError> {
-        loop {
+        self.execution_depth += 1;
+        'outer_loop: loop {
             let cond_val = self.evaluate_expr(condition)?;
             let cond_bool = Self::value_to_bool(&cond_val, location)?;
 
@@ -273,7 +274,6 @@ impl Interpreter {
                 break;
             }
 
-            self.execution_depth += 1;
             self.current_location = location;
             self.take_snapshot()?;
 
@@ -285,8 +285,7 @@ impl Interpreter {
                 }
                 if self.should_break {
                     self.should_break = false;
-                    self.execution_depth -= 1;
-                    return Ok(());
+                    break 'outer_loop;
                 }
                 if self.should_continue {
                     self.should_continue = false;
@@ -296,9 +295,8 @@ impl Interpreter {
                     self.take_snapshot()?;
                 }
             }
-
-            self.execution_depth -= 1;
         }
+        self.execution_depth -= 1;
 
         Ok(())
     }
@@ -309,8 +307,8 @@ impl Interpreter {
         condition: &AstNode,
         location: SourceLocation,
     ) -> Result<(), RuntimeError> {
-        loop {
-            self.execution_depth += 1;
+        self.execution_depth += 1;
+        'outer_loop: loop {
             self.current_location = location;
             self.take_snapshot()?;
 
@@ -322,8 +320,7 @@ impl Interpreter {
                 }
                 if self.should_break {
                     self.should_break = false;
-                    self.execution_depth -= 1;
-                    return Ok(());
+                    break 'outer_loop;
                 }
                 if self.should_continue {
                     self.should_continue = false;
@@ -336,7 +333,6 @@ impl Interpreter {
 
             let cond_val = self.evaluate_expr(condition)?;
             let cond_bool = Self::value_to_bool(&cond_val, location)?;
-            self.execution_depth -= 1;
 
             if !cond_bool {
                 self.current_location = location;
@@ -344,6 +340,7 @@ impl Interpreter {
                 break;
             }
         }
+        self.execution_depth -= 1;
 
         Ok(())
     }
@@ -360,7 +357,8 @@ impl Interpreter {
             let _needs_snapshot = self.execute_statement(init_stmt)?;
         }
 
-        loop {
+        self.execution_depth += 1;
+        'outer_loop: loop {
             if let Some(cond) = condition {
                 let cond_val = self.evaluate_expr(cond)?;
                 let cond_bool = Self::value_to_bool(&cond_val, location)?;
@@ -372,7 +370,6 @@ impl Interpreter {
                 }
             }
 
-            self.execution_depth += 1;
             self.current_location = location;
             self.take_snapshot()?;
 
@@ -384,8 +381,7 @@ impl Interpreter {
                 }
                 if self.should_break {
                     self.should_break = false;
-                    self.execution_depth -= 1;
-                    return Ok(());
+                    break 'outer_loop;
                 }
                 if self.should_continue {
                     self.should_continue = false;
@@ -399,9 +395,8 @@ impl Interpreter {
             if let Some(inc) = increment {
                 self.evaluate_expr(inc)?;
             }
-
-            self.execution_depth -= 1;
         }
+        self.execution_depth -= 1;
 
         Ok(())
     }

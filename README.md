@@ -1,10 +1,12 @@
-# Crustty
+# CRusTTY
 
 A pedagogical C interpreter with time-travel debugging capabilities, built in Rust with a terminal-based UI.
 
+![CRusTTY Screenshot](crustty.png)
+
 ## Overview
 
-Crustty is an educational tool for understanding C program execution. It provides:
+CRusTTY is an educational tool for understanding C program execution. It provides:
 
 - **Interactive Execution**: Step through C code line by line
 - **Time-Travel Debugging**: Step backward and forward through execution history
@@ -42,12 +44,22 @@ The terminal interface provides multiple panes:
 
 ## Installation
 
-### Prerequisites
+### From Precompiled Binaries
+
+Precompiled binaries for the following platforms will be available in the releases section of the GitHub repository:
+
+- Windows (x86_64 and ARM)
+- macOS (x86_64 and ARM)
+- Linux (x86_64 and ARM)
+
+### From Source
+
+#### Prerequisites
 
 - Rust toolchain (1.70 or later)
 - Terminal with Unicode and color support
 
-### Building
+#### Building
 
 ```bash
 cargo build --release
