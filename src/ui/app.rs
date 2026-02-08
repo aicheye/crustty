@@ -2,11 +2,12 @@
 
 use crate::interpreter::engine::Interpreter;
 use crate::interpreter::errors::RuntimeError;
+use crate::parser::ast::SourceLocation;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
-    Frame, Terminal,
     backend::Backend,
     layout::{Constraint, Direction, Layout},
+    Frame, Terminal,
 };
 use std::io;
 use std::time::{Duration, Instant};
@@ -32,12 +33,54 @@ impl FocusedPane {
     }
 
     /// Move focus to the previous pane (counter-clockwise)
+    #[allow(dead_code)] // Navigation method, currently only using next()
     pub fn prev(self) -> Self {
         match self {
             FocusedPane::Source => FocusedPane::Heap,
             FocusedPane::Terminal => FocusedPane::Source,
             FocusedPane::Stack => FocusedPane::Terminal,
             FocusedPane::Heap => FocusedPane::Stack,
+        }
+    }
+}
+
+/// Represents an error that occurred during parsing or execution
+#[derive(Debug, Clone)]
+pub enum ErrorState {
+    /// Parsing error that occurred before execution
+    ParseError {
+        message: String,
+        location: SourceLocation,
+    },
+    /// Runtime error that occurred during execution
+    RuntimeError(RuntimeError),
+}
+
+impl ErrorState {
+    /// Get the line number where the error occurred
+    pub fn line(&self) -> usize {
+        match self {
+            ErrorState::ParseError { location, .. } => location.line,
+            ErrorState::RuntimeError(err) => err.location().map(|loc| loc.line).unwrap_or(0),
+        }
+    }
+
+    /// Get the memory address if applicable (for memory-related errors)
+    pub fn memory_address(&self) -> Option<u64> {
+        match self {
+            ErrorState::RuntimeError(RuntimeError::UninitializedRead { address, .. }) => *address,
+            ErrorState::RuntimeError(RuntimeError::UseAfterFree { address, .. })
+            | ErrorState::RuntimeError(RuntimeError::DoubleFree { address, .. })
+            | ErrorState::RuntimeError(RuntimeError::InvalidFree { address, .. }) => Some(*address),
+            _ => None,
+        }
+    }
+
+    /// Get a human-readable error message
+    pub fn message(&self) -> String {
+        match self {
+            ErrorState::ParseError { message, .. } => format!("Parse Error: {}", message),
+            ErrorState::RuntimeError(err) => format!("Runtime Error: {}", err),
         }
     }
 }
@@ -53,27 +96,23 @@ pub struct App {
     /// Currently focused pane
     pub focused_pane: FocusedPane,
 
-    /// Per-pane scroll offsets
-    pub source_scroll: usize,
-    pub stack_scroll: usize,
-    pub heap_scroll: usize,
+    /// Source pane scroll state
+    pub source_scroll: super::panes::SourceScrollState,
+    /// Stack pane scroll state
+    pub stack_scroll: super::panes::StackScrollState,
+    /// Heap pane scroll state
+    pub heap_scroll: super::panes::HeapScrollState,
+    /// Terminal scroll offset
     pub terminal_scroll: usize,
-
-    /// Target visual row for the current line (None = not initialized yet)
-    /// This keeps the highlighted line at a fixed position when stepping
-    pub target_line_row: Option<usize>,
-
-    /// Previous item count for stack pane (for smart auto-scroll)
-    pub prev_stack_items: usize,
-
-    /// Previous item count for heap pane (for smart auto-scroll)
-    pub prev_heap_items: usize,
 
     /// Whether the app should quit
     pub should_quit: bool,
 
     /// Status message to display
     pub status_message: String,
+
+    /// Error state if an error occurred
+    pub error_state: Option<ErrorState>,
 
     /// Whether auto-play mode is active
     pub is_playing: bool,
@@ -92,21 +131,40 @@ impl App {
             interpreter,
             source_code,
             focused_pane: FocusedPane::Source,
-            source_scroll: 0,
-            stack_scroll: 0,
-            heap_scroll: 0,
+            source_scroll: super::panes::SourceScrollState {
+                offset: 0,
+                target_line_row: None,
+            },
+            stack_scroll: super::panes::StackScrollState {
+                offset: 0,
+                prev_item_count: 0,
+            },
+            heap_scroll: super::panes::HeapScrollState {
+                offset: 0,
+                prev_item_count: 0,
+            },
             terminal_scroll: 0,
-            target_line_row: None, // Will be set to center on first render
-            prev_stack_items: 0,
-            prev_heap_items: 0,
             should_quit: false,
             status_message: String::from("Ready!"),
+            error_state: None,
             is_playing: false,
             last_play_time: Instant::now(),
             last_space_press: Instant::now()
                 .checked_sub(Duration::from_secs(1))
                 .unwrap_or(Instant::now()),
         }
+    }
+
+    /// Create a new app with an error state (for parse or runtime errors)
+    pub fn new_with_error(
+        interpreter: Interpreter,
+        source_code: String,
+        error: ErrorState,
+    ) -> Self {
+        let mut app = Self::new(interpreter, source_code);
+        app.status_message = error.message();
+        app.error_state = Some(error);
+        app
     }
 
     /// Run the TUI application
@@ -120,15 +178,35 @@ impl App {
 
             // Handle auto-play mode
             if self.is_playing {
-                if self.last_play_time.elapsed() >= Duration::from_secs(1) {
+                // Stop playing if we hit an error
+                if self.error_state.is_some() {
+                    self.is_playing = false;
+                    self.status_message =
+                        format!("Stopped: {}", self.error_state.as_ref().unwrap().message());
+                } else if self.last_play_time.elapsed() >= Duration::from_secs(1) {
                     // Try to step forward
-                    if self.interpreter.step_forward().is_ok() {
-                        self.status_message = "Playing...".to_string();
-                        self.terminal_scroll = usize::MAX;
-                    } else {
-                        // No more steps available
-                        self.is_playing = false;
-                        self.status_message = "Playback complete".to_string();
+                    match self.interpreter.step_forward() {
+                        Ok(()) => {
+                            self.status_message = "Playing...".to_string();
+                            self.terminal_scroll = usize::MAX;
+                        }
+                        Err(e) => {
+                            // Check if this is a boundary error (end of execution) or a real runtime error
+                            if let RuntimeError::Generic { message, .. } = &e {
+                                if message == "Reached end of execution" {
+                                    // Just stop playing, don't set error state
+                                    self.is_playing = false;
+                                    self.status_message = message.clone();
+                                    self.last_play_time = Instant::now();
+                                    return Ok(());
+                                }
+                            }
+
+                            // Real error occurred, set error state and stop
+                            self.error_state = Some(ErrorState::RuntimeError(e.clone()));
+                            self.is_playing = false;
+                            self.status_message = format!("Error: {}", e);
+                        }
                     }
                     self.last_play_time = Instant::now();
                 }
@@ -184,9 +262,9 @@ impl App {
             left_rows[0],
             &self.source_code,
             self.interpreter.current_location().line,
+            self.error_state.as_ref().map(|e| e.line()),
             self.focused_pane == FocusedPane::Source,
             &mut self.source_scroll,
-            &mut self.target_line_row,
         );
 
         super::panes::render_terminal_pane(
@@ -200,25 +278,29 @@ impl App {
         super::panes::render_stack_pane(
             frame,
             right_rows[0],
-            self.interpreter.stack(),
-            self.interpreter.struct_defs(),
-            &self.source_code,
+            super::panes::StackRenderData {
+                stack: self.interpreter.stack(),
+                struct_defs: self.interpreter.struct_defs(),
+                source_code: &self.source_code,
+                return_value: self.interpreter.return_value(),
+                function_defs: self.interpreter.function_defs(),
+                error_address: self.error_state.as_ref().and_then(|e| e.memory_address()),
+            },
             self.focused_pane == FocusedPane::Stack,
             &mut self.stack_scroll,
-            &mut self.prev_stack_items,
-            self.interpreter.return_value(),
-            self.interpreter.function_defs(),
         );
 
         super::panes::render_heap_pane(
             frame,
             right_rows[1],
-            self.interpreter.heap(),
-            self.interpreter.pointer_types(),
-            self.interpreter.struct_defs(),
+            super::panes::HeapRenderData {
+                heap: self.interpreter.heap(),
+                pointer_types: self.interpreter.pointer_types(),
+                struct_defs: self.interpreter.struct_defs(),
+                error_address: self.error_state.as_ref().and_then(|e| e.memory_address()),
+            },
             self.focused_pane == FocusedPane::Heap,
             &mut self.heap_scroll,
-            &mut self.prev_heap_items,
         );
 
         // Render status bar
@@ -228,6 +310,7 @@ impl App {
             &self.status_message,
             self.interpreter.history_position(),
             self.interpreter.total_snapshots(),
+            self.error_state.as_ref(),
             self.is_playing,
         );
     }
@@ -240,6 +323,12 @@ impl App {
             }
             // Number keys step forward N times directly
             KeyCode::Char(c @ '1'..='9') => {
+                // Don't allow stepping if there's any error - just show the error message
+                if let Some(error) = &self.error_state {
+                    self.status_message = error.message();
+                    return;
+                }
+
                 self.is_playing = false;
                 let n = c.to_digit(10).unwrap() as usize;
                 let mut stepped = 0;
@@ -252,6 +341,11 @@ impl App {
                 }
                 self.status_message = format!("Stepped forward {} step(s)", stepped);
                 self.terminal_scroll = usize::MAX;
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                // Step over (skip entire loops and function calls)
+                self.is_playing = false;
+                self.step_over();
             }
             KeyCode::Tab => {
                 self.focused_pane = self.focused_pane.next();
@@ -268,18 +362,18 @@ impl App {
                 match self.focused_pane {
                     FocusedPane::Source => {
                         // Scrolling up makes the current line move down visually
-                        if let Some(row) = self.target_line_row {
-                            self.target_line_row = Some(row.saturating_add(1));
+                        if let Some(row) = self.source_scroll.target_line_row {
+                            self.source_scroll.target_line_row = Some(row.saturating_add(1));
                         }
                     }
                     FocusedPane::Stack => {
-                        if self.stack_scroll > 0 {
-                            self.stack_scroll = self.stack_scroll.saturating_sub(1);
+                        if self.stack_scroll.offset > 0 {
+                            self.stack_scroll.offset = self.stack_scroll.offset.saturating_sub(1);
                         }
                     }
                     FocusedPane::Heap => {
-                        if self.heap_scroll > 0 {
-                            self.heap_scroll = self.heap_scroll.saturating_sub(1);
+                        if self.heap_scroll.offset > 0 {
+                            self.heap_scroll.offset = self.heap_scroll.offset.saturating_sub(1);
                         }
                     }
                     FocusedPane::Terminal => {
@@ -293,15 +387,15 @@ impl App {
                 match self.focused_pane {
                     FocusedPane::Source => {
                         // Scrolling down makes the current line move up visually
-                        if let Some(row) = self.target_line_row {
-                            self.target_line_row = Some(row.saturating_sub(1));
+                        if let Some(row) = self.source_scroll.target_line_row {
+                            self.source_scroll.target_line_row = Some(row.saturating_sub(1));
                         }
                     }
                     FocusedPane::Stack => {
-                        self.stack_scroll = self.stack_scroll.saturating_add(1);
+                        self.stack_scroll.offset = self.stack_scroll.offset.saturating_add(1);
                     }
                     FocusedPane::Heap => {
-                        self.heap_scroll = self.heap_scroll.saturating_add(1);
+                        self.heap_scroll.offset = self.heap_scroll.offset.saturating_add(1);
                     }
                     FocusedPane::Terminal => {
                         self.terminal_scroll = self.terminal_scroll.saturating_add(1);
@@ -325,12 +419,18 @@ impl App {
             }
             KeyCode::Enter => {
                 // Jump to end of execution
+                // Don't allow if there's any error - just show the error message
+                if let Some(error) = &self.error_state {
+                    self.status_message = error.message();
+                    return;
+                }
+
                 self.is_playing = false;
                 let total = self.interpreter.total_snapshots();
                 if total > 0 {
                     // Step forward to the last snapshot
                     while self.interpreter.history_position() + 1 < total {
-                        if let Err(_) = self.interpreter.step_forward() {
+                        if self.interpreter.step_forward().is_err() {
                             break;
                         }
                     }
@@ -340,6 +440,12 @@ impl App {
             }
             KeyCode::Backspace => {
                 // Jump to start of execution
+                // Don't allow if there's any error - just show the error message
+                if let Some(error) = &self.error_state {
+                    self.status_message = error.message();
+                    return;
+                }
+
                 self.is_playing = false;
                 let _ = self.interpreter.rewind_to_start();
                 self.status_message = "Jumped to start".to_string();
@@ -351,34 +457,83 @@ impl App {
 
     /// Step forward in execution
     fn step_forward(&mut self) {
+        // Don't allow stepping if there's any error - just show the error message
+        if let Some(error) = &self.error_state {
+            self.status_message = error.message();
+            return;
+        }
+
         match self.interpreter.step_forward() {
             Ok(()) => {
                 self.status_message = "Stepped forward".to_string();
                 // Auto-scroll terminal to bottom
                 self.terminal_scroll = usize::MAX;
             }
-            Err(RuntimeError::Generic { message, .. }) => {
-                self.status_message = format!("Cannot step forward: {}", message);
-            }
             Err(e) => {
-                self.status_message = format!("Error: {:?}", e);
+                // Check if this is a boundary error (end of execution) or a real runtime error
+                if let RuntimeError::Generic { message, .. } = &e {
+                    if message == "Reached end of execution" {
+                        // This is just a boundary condition, not a real error
+                        self.status_message = message.clone();
+                        return;
+                    }
+                }
+
+                // Real runtime error - set error state
+                self.error_state = Some(ErrorState::RuntimeError(e.clone()));
+                self.status_message = format!("Error: {}", e);
             }
         }
     }
 
     /// Step backward in execution
     fn step_backward(&mut self) {
+        // Don't allow stepping if there's any error - just show the error message
+        if let Some(error) = &self.error_state {
+            self.status_message = error.message();
+            return;
+        }
+
         match self.interpreter.step_backward() {
             Ok(()) => {
                 self.status_message = "Stepped backward".to_string();
                 // Auto-scroll terminal to bottom
                 self.terminal_scroll = usize::MAX;
             }
-            Err(RuntimeError::Generic { message, .. }) => {
-                self.status_message = format!("Cannot step backward: {}", message);
+            Err(e) => {
+                // Don't set error state for "already at beginning" - just update status
+                self.status_message = e.to_string();
+            }
+        }
+    }
+
+    /// Step over: skip entire loops and function calls
+    fn step_over(&mut self) {
+        // Don't allow stepping if there's any error - just show the error message
+        if let Some(error) = &self.error_state {
+            self.status_message = error.message();
+            return;
+        }
+
+        match self.interpreter.step_over() {
+            Ok(()) => {
+                self.status_message = "Stepped over".to_string();
+                // Auto-scroll terminal to bottom
+                self.terminal_scroll = usize::MAX;
             }
             Err(e) => {
-                self.status_message = format!("Error: {:?}", e);
+                // Check if this is a boundary error (end of execution) or a real runtime error
+                if let RuntimeError::Generic { message, .. } = &e {
+                    if message == "Reached end of execution" {
+                        // This is just a boundary condition, not a real error
+                        self.status_message = message.clone();
+                        return;
+                    }
+                }
+
+                // Real runtime error - set error state
+                self.error_state = Some(ErrorState::RuntimeError(e.clone()));
+                self.status_message = format!("Error: {}", e);
             }
         }
     }

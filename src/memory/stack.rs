@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Complete API module, not all methods currently used
 //! Call stack implementation
 //!
 //! This module provides the call stack for function execution:
@@ -64,7 +65,7 @@ impl InitState {
     pub fn is_field_initialized(&self, field: &str) -> bool {
         match self {
             InitState::PartiallyInitialized(map) => {
-                map.get(field).map_or(false, |s| s.is_initialized())
+                map.get(field).is_some_and(|s| s.is_initialized())
             }
             InitState::Initialized => true,
             InitState::Uninitialized => false,

@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Complete API module, not all methods currently used
 //! Runtime value representation
 //!
 //! This module defines the [`Value`] enum, which represents all possible runtime values
@@ -21,7 +22,7 @@
 use std::collections::HashMap;
 
 /// Runtime values in the interpreter
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Value {
     Int(i32),
     Char(i8),
@@ -29,6 +30,7 @@ pub enum Value {
     Null,
     Struct(HashMap<String, Value>), // Field name -> field value
     Array(Vec<Value>),
+    #[default]
     Uninitialized, // Special marker for uninitialized memory
 }
 
@@ -68,17 +70,20 @@ impl Value {
 
     /// Expect an integer value, returns error message if not an Int
     pub fn expect_int(&self) -> Result<i32, String> {
-        self.as_int().ok_or_else(|| format!("Expected Int, got {:?}", self))
+        self.as_int()
+            .ok_or_else(|| format!("Expected Int, got {:?}", self))
     }
 
     /// Expect a char value, returns error message if not a Char
     pub fn expect_char(&self) -> Result<i8, String> {
-        self.as_char().ok_or_else(|| format!("Expected Char, got {:?}", self))
+        self.as_char()
+            .ok_or_else(|| format!("Expected Char, got {:?}", self))
     }
 
     /// Expect a pointer value, returns error message if not a Pointer
     pub fn expect_pointer(&self) -> Result<Address, String> {
-        self.as_pointer().ok_or_else(|| format!("Expected Pointer, got {:?}", self))
+        self.as_pointer()
+            .ok_or_else(|| format!("Expected Pointer, got {:?}", self))
     }
 
     /// Check if this value is null
@@ -89,11 +94,5 @@ impl Value {
     /// Check if this value is a pointer (including null)
     pub fn is_pointer(&self) -> bool {
         matches!(self, Value::Pointer(_) | Value::Null)
-    }
-}
-
-impl Default for Value {
-    fn default() -> Self {
-        Value::Uninitialized
     }
 }

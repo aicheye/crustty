@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Complete API module, not all methods currently used
 //! Heap implementation for the interpreter
 //!
 //! This module provides heap memory management with:
@@ -14,6 +15,7 @@
 //! require changes to 50+ call sites with minimal functional benefit.
 
 use super::value::Address;
+use crate::interpreter::constants::HEAP_ADDRESS_START;
 
 /// State of a heap block
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,10 +27,10 @@ pub enum BlockState {
 /// A block of heap memory
 #[derive(Debug, Clone)]
 pub struct HeapBlock {
-    pub data: Vec<u8>,             // Raw bytes
+    pub data: Vec<u8>, // Raw bytes
     pub size: usize,
     pub state: BlockState,
-    pub init_map: Vec<bool>,       // Per-byte initialization tracking
+    pub init_map: Vec<bool>, // Per-byte initialization tracking
 }
 
 impl HeapBlock {
@@ -106,7 +108,7 @@ impl Heap {
     pub fn new(max_heap_size: usize) -> Self {
         Heap {
             allocations: std::collections::HashMap::new(),
-            next_address: 0x10000000, // Start heap at high address
+            next_address: HEAP_ADDRESS_START, // Start heap at high address
             total_allocated_bytes: 0,
             max_heap_size,
         }
@@ -139,9 +141,10 @@ impl Heap {
             Some(block) if block.state == BlockState::Tombstone => {
                 Err(format!("Double free detected at address 0x{:x}", addr))
             }
-            None => {
-                Err(format!("Invalid free: address 0x{:x} was never allocated", addr))
-            }
+            None => Err(format!(
+                "Invalid free: address 0x{:x} was never allocated",
+                addr
+            )),
             _ => unreachable!(),
         }
     }
@@ -150,8 +153,14 @@ impl Heap {
     pub fn get_block(&self, addr: Address) -> Result<&HeapBlock, String> {
         match self.allocations.get(&addr) {
             Some(block) if block.state == BlockState::Allocated => Ok(block),
-            Some(_) => Err(format!("Use-after-free: address 0x{:x} has been freed", addr)),
-            None => Err(format!("Invalid pointer: address 0x{:x} not allocated", addr)),
+            Some(_) => Err(format!(
+                "Use-after-free: address 0x{:x} has been freed",
+                addr
+            )),
+            None => Err(format!(
+                "Invalid pointer: address 0x{:x} not allocated",
+                addr
+            )),
         }
     }
 
@@ -159,8 +168,14 @@ impl Heap {
     pub fn get_block_mut(&mut self, addr: Address) -> Result<&mut HeapBlock, String> {
         match self.allocations.get_mut(&addr) {
             Some(block) if block.state == BlockState::Allocated => Ok(block),
-            Some(_) => Err(format!("Use-after-free: address 0x{:x} has been freed", addr)),
-            None => Err(format!("Invalid pointer: address 0x{:x} not allocated", addr)),
+            Some(_) => Err(format!(
+                "Use-after-free: address 0x{:x} has been freed",
+                addr
+            )),
+            None => Err(format!(
+                "Invalid pointer: address 0x{:x} not allocated",
+                addr
+            )),
         }
     }
 
@@ -191,7 +206,10 @@ impl Heap {
         }
 
         let block_addr = target_block_addr.ok_or_else(|| {
-            format!("Invalid write: address 0x{:x} not in any allocated block", addr)
+            format!(
+                "Invalid write: address 0x{:x} not in any allocated block",
+                addr
+            )
         })?;
 
         let block = self.get_block_mut(block_addr)?;
@@ -213,7 +231,10 @@ impl Heap {
         }
 
         let block_addr = target_block_addr.ok_or_else(|| {
-            format!("Invalid read: address 0x{:x} not in any allocated block", addr)
+            format!(
+                "Invalid read: address 0x{:x} not in any allocated block",
+                addr
+            )
         })?;
 
         let block = self.get_block(block_addr)?;

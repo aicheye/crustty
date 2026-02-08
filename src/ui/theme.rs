@@ -1,6 +1,7 @@
 use ratatui::style::Color;
 
 pub struct Theme {
+    #[allow(dead_code)] // Background color field for future use
     pub bg: Color,
     pub fg: Color,
     pub primary: Color,   // Blue

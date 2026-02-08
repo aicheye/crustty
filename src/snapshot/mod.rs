@@ -2,7 +2,7 @@
 
 use crate::memory::{heap::Heap, stack::Stack, value::Value};
 use crate::parser::ast::{SourceLocation, Type};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 /// Mock terminal for capturing printf output
 #[derive(Debug, Clone)]
@@ -16,6 +16,7 @@ impl MockTerminal {
     }
 
     /// Add a line of output
+    #[allow(dead_code)] // API method, used via print()
     pub fn println(&mut self, text: String, location: SourceLocation) {
         self.lines.push(TerminalLine { text, location });
     }
@@ -32,6 +33,7 @@ impl MockTerminal {
     }
 
     /// Delete all output from a specific source line
+    #[allow(dead_code)] // Utility method for reverse execution, not currently implemented
     pub fn delete_output_from_line(&mut self, line: usize) {
         self.lines.retain(|tl| tl.location.line != line);
     }
@@ -42,6 +44,7 @@ impl MockTerminal {
     }
 
     /// Clear all output
+    #[allow(dead_code)] // Utility method for resetting state
     pub fn clear(&mut self) {
         self.lines.clear();
     }
@@ -69,36 +72,13 @@ pub struct Snapshot {
     pub current_statement_index: usize, // Index into statement list
     pub source_location: SourceLocation,
     pub return_value: Option<Value>,
-    pub pointer_types: HashMap<u64, Type>,
-    pub stack_address_map: HashMap<u64, (usize, String)>,
+    pub pointer_types: FxHashMap<u64, Type>,
+    pub stack_address_map: FxHashMap<u64, (usize, String)>,
     pub next_stack_address: u64,
+    pub execution_depth: usize,
 }
 
 impl Snapshot {
-    pub fn new(
-        stack: Stack,
-        heap: Heap,
-        terminal: MockTerminal,
-        current_statement_index: usize,
-        source_location: SourceLocation,
-        return_value: Option<Value>,
-        pointer_types: HashMap<u64, Type>,
-        stack_address_map: HashMap<u64, (usize, String)>,
-        next_stack_address: u64,
-    ) -> Self {
-        Snapshot {
-            stack,
-            heap,
-            terminal,
-            current_statement_index,
-            source_location,
-            return_value,
-            pointer_types,
-            stack_address_map,
-            next_stack_address,
-        }
-    }
-
     /// Estimate the memory usage of this snapshot in bytes
     pub fn estimated_size(&self) -> usize {
         // This is a rough estimate
@@ -149,6 +129,7 @@ impl SnapshotManager {
     }
 
     /// Get the latest snapshot
+    #[allow(dead_code)] // API method for snapshot access
     pub fn latest(&self) -> Option<&Snapshot> {
         self.snapshots.last()
     }
@@ -159,6 +140,7 @@ impl SnapshotManager {
     }
 
     /// Get the number of snapshots
+    #[allow(dead_code)] // API method, currently using len()
     pub fn count(&self) -> usize {
         self.snapshots.len()
     }
@@ -184,6 +166,7 @@ impl SnapshotManager {
     }
 
     /// Clear all snapshots
+    #[allow(dead_code)] // API method for resetting state
     pub fn clear(&mut self) {
         self.snapshots.clear();
         self.current_memory = 0;
