@@ -4,9 +4,9 @@ This document tracks all incomplete features, known limitations, and remaining t
 
 ## 🔴 Critical Missing Features / Bugs
 - [ ] **Complex Member Access**: Implementation needed for nested field access via pointers (e.g., `ptr->nested.field`).
-- [ ] **Pointer Arithmetic**: Full support for mixing pointers and dereferences in arithmetic expressions (e.g., `x + *ptr`).
+- [x] **Pointer Arithmetic**: Full support for mixing pointers and dereferences in arithmetic expressions (e.g., `x + *ptr`).
 - [ ] **Type Checking**:
-    - [ ] Mixed `char`/`int` arithmetic behavior needs verification.
+    - [x] Mixed `char`/`int` arithmetic behavior needs verification.
     - [ ] Strict type checking for assignments and function calls.
 - [ ] **Printf Support**:
     - [x] Basic specifiers: `%d`, `%u`, `%x`, `%c`, `%s`, `%%`.

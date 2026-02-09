@@ -3,6 +3,7 @@
 use crate::memory::{heap::Heap, stack::Stack, value::Value};
 use crate::parser::ast::{SourceLocation, Type};
 use rustc_hash::FxHashMap;
+use std::collections::BTreeMap;
 
 /// Mock terminal for capturing printf output
 #[derive(Debug, Clone)]
@@ -66,7 +67,7 @@ pub struct Snapshot {
     pub source_location: SourceLocation,
     pub return_value: Option<Value>,
     pub pointer_types: FxHashMap<u64, Type>,
-    pub stack_address_map: FxHashMap<u64, (usize, String)>,
+    pub stack_address_map: BTreeMap<u64, (usize, String)>,
     pub next_stack_address: u64,
     pub execution_depth: usize,
 }

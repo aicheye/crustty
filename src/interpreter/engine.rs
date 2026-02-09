@@ -22,10 +22,11 @@
 
 use crate::interpreter::constants::STACK_ADDRESS_START;
 use crate::interpreter::errors::RuntimeError;
-use crate::memory::{heap::Heap, stack::Stack, value::Value};
+use crate::memory::{heap::Heap, sizeof_type, stack::Stack, value::Value};
 use crate::parser::ast::{StructDef as AstStructDef, *};
 use crate::snapshot::{MockTerminal, Snapshot, SnapshotManager};
 use rustc_hash::FxHashMap;
+use std::collections::BTreeMap;
 
 /// The main interpreter that executes a C program
 pub struct Interpreter {
@@ -66,7 +67,7 @@ pub struct Interpreter {
     pub(crate) should_continue: bool,
 
     /// Mapping from stack addresses to (frame_depth, variable_name)
-    pub(crate) stack_address_map: FxHashMap<u64, (usize, String)>,
+    pub(crate) stack_address_map: BTreeMap<u64, (usize, String)>,
 
     /// Next available stack address
     pub(crate) next_stack_address: u64,
@@ -139,7 +140,7 @@ impl Interpreter {
             finished: false,
             should_break: false,
             should_continue: false,
-            stack_address_map: FxHashMap::default(),
+            stack_address_map: BTreeMap::new(),
             next_stack_address: STACK_ADDRESS_START,
             return_value: None,
             goto_target: None,
@@ -525,6 +526,44 @@ impl Interpreter {
 
     pub fn terminal(&self) -> &MockTerminal {
         &self.terminal
+    }
+
+    /// Resolve a pointer address to a stack variable, handling interior pointers
+    /// Returns (base_address, frame_depth, variable_name)
+    pub(crate) fn resolve_stack_pointer(
+        &self,
+        addr: u64,
+        location: SourceLocation,
+    ) -> Result<(u64, usize, String), RuntimeError> {
+        let entry = self.stack_address_map.range(..=addr).next_back();
+
+        if let Some((&base_addr, (frame_depth, var_name))) = entry {
+            // Check if address is within variable bounds
+            // We need to look up the variable to get its size
+            let frame = self
+                .stack
+                .frames()
+                .get(*frame_depth)
+                .ok_or(RuntimeError::InvalidFrameDepth { location })?;
+            let var = frame
+                .get_var(var_name)
+                .ok_or_else(|| RuntimeError::UndefinedVariable {
+                    name: var_name.clone(),
+                    location,
+                })?;
+
+            let size = sizeof_type(&var.var_type, &self.struct_defs) as u64;
+
+            if addr < base_addr + size {
+                return Ok((base_addr, *frame_depth, var_name.clone()));
+            }
+        }
+
+        Err(RuntimeError::InvalidPointer {
+            message: format!("Invalid stack pointer: 0x{:x}", addr),
+            address: Some(addr),
+            location,
+        })
     }
 
     pub fn pointer_types(&self) -> &FxHashMap<u64, Type> {
