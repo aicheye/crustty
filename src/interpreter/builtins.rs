@@ -11,7 +11,7 @@
 //!
 //! # Implementation Notes
 //!
-//! - `printf` supports basic format specifiers: `%d`, `%u`, `%x`, `%c`, `%s`, `%%`
+//! - `printf` supports format specifiers: `%d`, `%u`, `%x`, `%c`, `%s`, `%%`
 //! - `malloc` returns heap pointers starting at `0x0000_1000`
 //! - `free` marks memory as deallocated but doesn't zero it (matches C behavior)
 //! - All built-ins are implemented as methods on the [`Interpreter`] struct
@@ -85,6 +85,48 @@ impl Interpreter {
                                     return Err(RuntimeError::InvalidPrintfFormat {
                                         message: format!(
                                             "%d expects int, got {:?}",
+                                            args[arg_index]
+                                        ),
+                                        location,
+                                    });
+                                }
+                            }
+                            arg_index += 1;
+                        }
+                        'u' => {
+                            if arg_index >= args.len() {
+                                return Err(RuntimeError::InvalidPrintfFormat {
+                                    message: "Not enough arguments for format string".to_string(),
+                                    location,
+                                });
+                            }
+                            match &args[arg_index] {
+                                Value::Int(n) => output.push_str(&(*n as u32).to_string()),
+                                _ => {
+                                    return Err(RuntimeError::InvalidPrintfFormat {
+                                        message: format!(
+                                            "%u expects int, got {:?}",
+                                            args[arg_index]
+                                        ),
+                                        location,
+                                    });
+                                }
+                            }
+                            arg_index += 1;
+                        }
+                        'x' => {
+                            if arg_index >= args.len() {
+                                return Err(RuntimeError::InvalidPrintfFormat {
+                                    message: "Not enough arguments for format string".to_string(),
+                                    location,
+                                });
+                            }
+                            match &args[arg_index] {
+                                Value::Int(n) => output.push_str(&format!("{:x}", *n as u32)),
+                                _ => {
+                                    return Err(RuntimeError::InvalidPrintfFormat {
+                                        message: format!(
+                                            "%x expects int, got {:?}",
                                             args[arg_index]
                                         ),
                                         location,
@@ -189,12 +231,10 @@ impl Interpreter {
         let mut current_addr = addr;
 
         loop {
-            let byte = self.heap.read_byte(current_addr).map_err(|e| {
-                RuntimeError::InvalidMemoryOperation {
-                    message: e,
-                    location,
-                }
-            })?;
+            let byte = self
+                .heap
+                .read_byte(current_addr)
+                .map_err(|e| Self::map_heap_error(e, location))?;
 
             if byte == 0 {
                 break;
