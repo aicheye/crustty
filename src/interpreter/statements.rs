@@ -233,25 +233,43 @@ impl Interpreter {
         let cond_bool = Self::value_to_bool(&cond_val, location)?;
 
         if cond_bool {
+            self.enter_scope();
             for stmt in then_branch {
                 let needs_snapshot = self.execute_statement(stmt)?;
                 if self.finished {
+                    self.exit_scope();
                     return Ok(());
                 }
+
+                if self.should_break || self.should_continue {
+                    self.exit_scope();
+                    return Ok(());
+                }
+
                 if needs_snapshot {
                     self.take_snapshot()?;
                 }
             }
+            self.exit_scope();
         } else if let Some(else_stmts) = else_branch {
+            self.enter_scope();
             for stmt in else_stmts {
                 let needs_snapshot = self.execute_statement(stmt)?;
                 if self.finished {
+                    self.exit_scope();
                     return Ok(());
                 }
+
+                if self.should_break || self.should_continue {
+                    self.exit_scope();
+                    return Ok(());
+                }
+
                 if needs_snapshot {
                     self.take_snapshot()?;
                 }
             }
+            self.exit_scope();
         }
 
         Ok(())
@@ -277,17 +295,21 @@ impl Interpreter {
             self.current_location = location;
             self.take_snapshot()?;
 
+            self.enter_scope();
             for stmt in body {
                 let needs_snapshot = self.execute_statement(stmt)?;
                 if self.finished {
+                    self.exit_scope();
                     self.execution_depth -= 1;
                     return Ok(());
                 }
                 if self.should_break {
+                    self.exit_scope();
                     self.should_break = false;
                     break 'outer_loop;
                 }
                 if self.should_continue {
+                    self.exit_scope();
                     self.should_continue = false;
                     break;
                 }
@@ -295,6 +317,7 @@ impl Interpreter {
                     self.take_snapshot()?;
                 }
             }
+            self.exit_scope();
         }
         self.execution_depth -= 1;
 
@@ -312,17 +335,21 @@ impl Interpreter {
             self.current_location = location;
             self.take_snapshot()?;
 
+            self.enter_scope();
             for stmt in body {
                 let needs_snapshot = self.execute_statement(stmt)?;
                 if self.finished {
+                    self.exit_scope();
                     self.execution_depth -= 1;
                     return Ok(());
                 }
                 if self.should_break {
+                    self.exit_scope();
                     self.should_break = false;
                     break 'outer_loop;
                 }
                 if self.should_continue {
+                    self.exit_scope();
                     self.should_continue = false;
                     break;
                 }
@@ -330,6 +357,7 @@ impl Interpreter {
                     self.take_snapshot()?;
                 }
             }
+            self.exit_scope();
 
             let cond_val = self.evaluate_expr(condition)?;
             let cond_bool = Self::value_to_bool(&cond_val, location)?;
@@ -353,6 +381,8 @@ impl Interpreter {
         body: &[AstNode],
         location: SourceLocation,
     ) -> Result<(), RuntimeError> {
+        self.enter_scope(); // Scope for init and loop variable
+
         if let Some(init_stmt) = init {
             let _needs_snapshot = self.execute_statement(init_stmt)?;
         }
@@ -373,17 +403,22 @@ impl Interpreter {
             self.current_location = location;
             self.take_snapshot()?;
 
+            self.enter_scope(); // Scope for body
             for stmt in body {
                 let needs_snapshot = self.execute_statement(stmt)?;
                 if self.finished {
+                    self.exit_scope(); // Exit body scope
+                    self.exit_scope(); // Exit loop scope
                     self.execution_depth -= 1;
                     return Ok(());
                 }
                 if self.should_break {
+                    self.exit_scope(); // Exit body scope
                     self.should_break = false;
                     break 'outer_loop;
                 }
                 if self.should_continue {
+                    self.exit_scope(); // Exit body scope
                     self.should_continue = false;
                     break;
                 }
@@ -391,12 +426,14 @@ impl Interpreter {
                     self.take_snapshot()?;
                 }
             }
+            self.exit_scope(); // Exit body scope
 
             if let Some(inc) = increment {
                 self.evaluate_expr(inc)?;
             }
         }
         self.execution_depth -= 1;
+        self.exit_scope(); // Exit loop scope
 
         Ok(())
     }
@@ -435,6 +472,7 @@ impl Interpreter {
         let start_index = match_index.or(default_index);
 
         if let Some(start) = start_index {
+            self.enter_scope();
             for case in &cases[start..] {
                 let case_location = match case {
                     CaseNode::Case { location, .. } => *location,
@@ -451,6 +489,7 @@ impl Interpreter {
                 for stmt in statements {
                     let needs_snapshot = self.execute_statement(stmt)?;
                     if self.finished {
+                        self.exit_scope();
                         return Ok(());
                     }
 
@@ -460,13 +499,16 @@ impl Interpreter {
 
                     if self.should_break {
                         self.should_break = false;
+                        self.exit_scope();
                         return Ok(());
                     }
                     if self.should_continue {
+                        self.exit_scope();
                         return Ok(());
                     }
                 }
             }
+            self.exit_scope();
         }
 
         Ok(())

@@ -186,6 +186,20 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Enter a new scope in the current stack frame
+    pub(crate) fn enter_scope(&mut self) {
+        if let Some(frame) = self.stack.current_frame_mut() {
+            frame.push_scope();
+        }
+    }
+
+    /// Exit the current scope in the current stack frame
+    pub(crate) fn exit_scope(&mut self) {
+        if let Some(frame) = self.stack.current_frame_mut() {
+            frame.pop_scope();
+        }
+    }
+
     /// Execute a single statement
     /// Returns true if a snapshot should be taken after this statement
     pub(crate) fn execute_statement(&mut self, stmt: &AstNode) -> Result<bool, RuntimeError> {
@@ -272,6 +286,25 @@ impl Interpreter {
                     body,
                     *location,
                 )?;
+                Ok(false)
+            }
+
+            AstNode::Block {
+                statements,
+                location: _,
+            } => {
+                self.enter_scope();
+                for stmt in statements {
+                    let needs_snapshot = self.execute_statement(stmt)?;
+                    if self.finished || self.should_break || self.should_continue {
+                        self.exit_scope();
+                        return Ok(false);
+                    }
+                    if needs_snapshot {
+                        self.take_snapshot()?;
+                    }
+                }
+                self.exit_scope();
                 Ok(false)
             }
 
