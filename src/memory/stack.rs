@@ -102,6 +102,13 @@ pub struct StackFrame {
     pub locals: HashMap<String, LocalVar>,
     pub return_location: Option<SourceLocation>, // Where to return to
     pub insertion_order: Vec<String>,            // Track order of variable declarations
+    scope_stack: Vec<ScopeData>,
+}
+
+#[derive(Debug, Clone)]
+struct ScopeData {
+    shadowed: Vec<(String, LocalVar)>,
+    declared: Vec<String>,
 }
 
 impl StackFrame {
@@ -111,6 +118,33 @@ impl StackFrame {
             locals: HashMap::new(),
             return_location,
             insertion_order: Vec::new(),
+            scope_stack: Vec::new(),
+        }
+    }
+
+    /// Enter a new scope
+    pub fn push_scope(&mut self) {
+        self.scope_stack.push(ScopeData {
+            shadowed: Vec::new(),
+            declared: Vec::new(),
+        });
+    }
+
+    /// Exit the current scope
+    pub fn pop_scope(&mut self) {
+        if let Some(scope) = self.scope_stack.pop() {
+            // Remove variables declared in this scope
+            for name in scope.declared {
+                self.locals.remove(&name);
+                if let Some(pos) = self.insertion_order.iter().rposition(|x| x == &name) {
+                    self.insertion_order.remove(pos);
+                }
+            }
+
+            // Restore shadowed variables
+            for (name, var) in scope.shadowed {
+                self.locals.insert(name, var);
+            }
         }
     }
 
@@ -119,14 +153,29 @@ impl StackFrame {
         &mut self,
         name: String,
         var_type: Type,
-        init_state: InitState,
+        init_state: InitState, // Passed by value
         address: u64,
     ) {
-        if !self.locals.contains_key(&name) {
-            self.insertion_order.push(name.clone());
+        let new_var = LocalVar::new(var_type, init_state, address);
+
+        // Handle scoping if we are in a nested scope
+        if let Some(scope) = self.scope_stack.last_mut() {
+            if let Some(old_var) = self.locals.insert(name.clone(), new_var) {
+                // If variable existed, track it as shadowed
+                scope.shadowed.push((name, old_var));
+                // Don't modify insertion_order as name is already there
+            } else {
+                // New variable in this scope
+                scope.declared.push(name.clone());
+                self.insertion_order.push(name);
+            }
+        } else {
+            // Top-level function scope
+            if !self.locals.contains_key(&name) {
+                self.insertion_order.push(name.clone());
+            }
+            self.locals.insert(name, new_var);
         }
-        self.locals
-            .insert(name, LocalVar::new(var_type, init_state, address));
     }
 
     /// Get a local variable
