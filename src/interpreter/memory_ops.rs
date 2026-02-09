@@ -101,15 +101,8 @@ impl Interpreter {
                     Value::Pointer(addr) => {
                         if addr < HEAP_ADDRESS_START {
                             // Stack address
-                            let (frame_depth, var_name) = self
-                                .stack_address_map
-                                .get(&addr)
-                                .ok_or_else(|| RuntimeError::InvalidPointer {
-                                    message: format!("Invalid stack pointer: 0x{:x}", addr),
-                                    address: Some(addr),
-                                    location,
-                                })?
-                                .clone();
+                            let (base_addr, frame_depth, var_name) =
+                                self.resolve_stack_pointer(addr, location)?;
 
                             // Get mutable access to the frame
                             // This is tricky with Rust's borrow checker
@@ -136,6 +129,38 @@ impl Interpreter {
                                 Value::Struct(fields) => {
                                     fields.insert(member.clone(), value);
                                     Ok(())
+                                }
+                                Value::Array(elements) => {
+                                    let offset = addr - base_addr;
+                                    let elem_type = Type {
+                                        base: var.var_type.base.clone(),
+                                        pointer_depth: var.var_type.pointer_depth,
+                                        is_const: var.var_type.is_const,
+                                        array_dims: var.var_type.array_dims[1..].to_vec(),
+                                    };
+                                    let elem_size =
+                                        sizeof_type(&elem_type, &self.struct_defs) as u64;
+                                    let idx = if elem_size > 0 { offset / elem_size } else { 0 };
+
+                                    if idx as usize >= elements.len() {
+                                        return Err(RuntimeError::BufferOverrun {
+                                            index: idx as usize,
+                                            size: elements.len(),
+                                            location,
+                                        });
+                                    }
+
+                                    match &mut elements[idx as usize] {
+                                        Value::Struct(fields) => {
+                                            fields.insert(member.clone(), value);
+                                            Ok(())
+                                        }
+                                        _ => Err(RuntimeError::TypeError {
+                                            expected: "struct element".to_string(),
+                                            got: format!("{:?}", elements[idx as usize]),
+                                            location,
+                                        }),
+                                    }
                                 }
                                 _ => Err(RuntimeError::TypeError {
                                     expected: "struct".to_string(),
@@ -205,15 +230,8 @@ impl Interpreter {
                         // Check if this is a stack address
                         if addr < HEAP_ADDRESS_START {
                             // Stack address - look up in map
-                            let (frame_depth, var_name) = self
-                                .stack_address_map
-                                .get(&addr)
-                                .ok_or_else(|| RuntimeError::InvalidPointer {
-                                    message: format!("Invalid stack pointer: 0x{:x}", addr),
-                                    address: Some(addr),
-                                    location,
-                                })?
-                                .clone();
+                            let (base_addr, frame_depth, var_name) =
+                                self.resolve_stack_pointer(addr, location)?;
 
                             // Get mutable access to the frame
                             let frames_len = self.stack.frames().len();
@@ -233,9 +251,35 @@ impl Interpreter {
                                 }
                             })?;
 
-                            // Update the variable's value
-                            var.value = value;
-                            var.init_state = crate::memory::stack::InitState::Initialized;
+                            // Update the variable's value handling array indexing
+                            match &mut var.value {
+                                Value::Array(elements) => {
+                                    let offset = addr - base_addr;
+                                    let elem_type = Type {
+                                        base: var.var_type.base.clone(),
+                                        pointer_depth: var.var_type.pointer_depth,
+                                        is_const: var.var_type.is_const,
+                                        array_dims: var.var_type.array_dims[1..].to_vec(),
+                                    };
+                                    let elem_size =
+                                        sizeof_type(&elem_type, &self.struct_defs) as u64;
+                                    let idx = if elem_size > 0 { offset / elem_size } else { 0 };
+
+                                    if idx as usize >= elements.len() {
+                                        return Err(RuntimeError::BufferOverrun {
+                                            index: idx as usize,
+                                            size: elements.len(),
+                                            location,
+                                        });
+                                    }
+                                    elements[idx as usize] = value;
+                                    var.init_state = crate::memory::stack::InitState::Initialized;
+                                }
+                                _ => {
+                                    var.value = value;
+                                    var.init_state = crate::memory::stack::InitState::Initialized;
+                                }
+                            }
                             Ok(())
                         } else {
                             // Heap address
@@ -338,15 +382,8 @@ impl Interpreter {
 
                         if addr < HEAP_ADDRESS_START {
                             // Stack pointer dereference assignment (for decayed arrays)
-                            let (frame_depth, var_name) = self
-                                .stack_address_map
-                                .get(&addr)
-                                .ok_or_else(|| RuntimeError::InvalidPointer {
-                                    message: format!("Invalid stack pointer: 0x{:x}", addr),
-                                    address: Some(addr),
-                                    location,
-                                })?
-                                .clone();
+                            let (base_addr, frame_depth, var_name) =
+                                self.resolve_stack_pointer(addr, location)?;
 
                             let frames_len = self.stack.frames().len();
                             if frame_depth >= frames_len {
@@ -368,15 +405,30 @@ impl Interpreter {
                             // Handle array indexing for stack arrays
                             match &mut var.value {
                                 Value::Array(elements) => {
-                                    if idx < 0 || idx as usize >= elements.len() {
+                                    let offset = addr - base_addr;
+                                    let elem_type = Type {
+                                        base: var.var_type.base.clone(),
+                                        pointer_depth: var.var_type.pointer_depth,
+                                        is_const: var.var_type.is_const,
+                                        array_dims: var.var_type.array_dims[1..].to_vec(),
+                                    };
+                                    let elem_size =
+                                        sizeof_type(&elem_type, &self.struct_defs) as u64;
+                                    let start_index =
+                                        if elem_size > 0 { offset / elem_size } else { 0 };
+
+                                    let final_idx = (start_index as i64) + (idx as i64);
+
+                                    if final_idx < 0 || final_idx as usize >= elements.len() {
                                         return Err(RuntimeError::BufferOverrun {
-                                            index: idx as usize,
+                                            index: final_idx as usize,
                                             size: elements.len(),
                                             location,
                                         });
                                     }
-                                    elements[idx as usize] = value;
+                                    elements[final_idx as usize] = value;
                                     // Mark as initialized if this was the variable's first write
+                                    // Note: granular array tracking is pending in Todo 4
                                     var.init_state = crate::memory::stack::InitState::Initialized;
                                 }
                                 _ => {
