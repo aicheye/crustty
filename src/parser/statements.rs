@@ -91,6 +91,18 @@ impl Parser {
             });
         }
 
+        if self.match_token(&Token::LBrace(loc)) {
+            let statements = self.parse_block_statements()?;
+            self.expect_token(
+                &Token::RBrace(self.current_location()),
+                "Expected '}' after block",
+            )?;
+            return Ok(AstNode::Block {
+                statements,
+                location: loc,
+            });
+        }
+
         // Check for label: identifier followed by colon
         if let Token::Ident(_, _) = self.peek_token() {
             if self

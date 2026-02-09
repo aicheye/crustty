@@ -220,6 +220,10 @@ pub enum AstNode {
         label: String,
         location: SourceLocation,
     },
+    Block {
+        statements: Vec<AstNode>,
+        location: SourceLocation,
+    },
     Label {
         name: String,
         location: SourceLocation,
@@ -307,6 +311,7 @@ impl AstNode {
             AstNode::Break { location, .. } => location,
             AstNode::Continue { location, .. } => location,
             AstNode::Goto { location, .. } => location,
+            AstNode::Block { location, .. } => location,
             AstNode::Label { location, .. } => location,
             AstNode::ExpressionStatement { location, .. } => location,
             AstNode::IntLiteral(_, loc) => loc,
