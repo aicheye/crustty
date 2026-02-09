@@ -33,7 +33,6 @@ impl FocusedPane {
     }
 
     /// Move focus to the previous pane (counter-clockwise)
-    #[allow(dead_code)] // Navigation method, currently only using next()
     pub fn prev(self) -> Self {
         match self {
             FocusedPane::Source => FocusedPane::Heap,
@@ -353,6 +352,9 @@ impl App {
             }
             KeyCode::Tab => {
                 self.focused_pane = self.focused_pane.next();
+            }
+            KeyCode::BackTab => {
+                self.focused_pane = self.focused_pane.prev();
             }
             KeyCode::Left => {
                 self.is_playing = false;

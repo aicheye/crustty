@@ -9,9 +9,12 @@ This document tracks all incomplete features, known limitations, and remaining t
     - [ ] Mixed `char`/`int` arithmetic behavior needs verification.
     - [ ] Strict type checking for assignments and function calls.
 - [ ] **Printf Support**:
-    - [ ] Current support limited to `%d`, `%s`, `%c`.
+    - [x] Basic specifiers: `%d`, `%u`, `%x`, `%c`, `%s`, `%%`.
     - [ ] Missing width/precision modifiers.
-- [ ] **Missing Files**: `listmatrix.c` is referenced in documentation/tests but missing from the repository.
+- [ ] **Goto/Label**:
+    - [x] Forward gotos within the same function (the `goto cleanup` pattern).
+    - [ ] Backward gotos (jumping to a label before the goto statement).
+    - [ ] Goto into nested blocks.
 
 ## 🟡 TUI & Usability Improvements
 - [ ] **Performance**:
@@ -21,6 +24,7 @@ This document tracks all incomplete features, known limitations, and remaining t
     - [ ] Handle deep or cyclic struct references in variables view (verify recursion limits).
 - [ ] **Input Handling**:
     - [ ] Verify scrolling behavior when stepping backwards (auto-scroll to active line).
+    - [x] Shift+Tab (BackTab) for reverse pane cycling.
 
 ## 🟢 Integration & Polish
 - [ ] **CLI/Main**:
@@ -29,11 +33,12 @@ This document tracks all incomplete features, known limitations, and remaining t
 - [ ] **Standard Library**:
     - [ ] Add `memset`, `memcpy`, `strcpy` built-ins.
     - [ ] Support `NULL` macro properly in all contexts.
+- [x] **Error Handling**:
+    - [x] Use-after-free errors now produce `RuntimeError::UseAfterFree` with proper address instead of generic `InvalidMemoryOperation`.
 
 ## 🧪 Testing & Verification
 - [ ] **CI Limitations**: Tests requiring TTY/Interactive TUI cannot run in CI.
 - [ ] **Integration Scenarios**:
-    - [ ] Re-create `listmatrix.c` and verify expected output.
     - [ ] Full run-through of `examples/default.c` checking for memory leaks.
 - [ ] **Edge Cases**:
     - [ ] Stack overflow detection (recursion limit).
@@ -43,3 +48,9 @@ This document tracks all incomplete features, known limitations, and remaining t
 - [ ] **Parser**: Switch to `nom` or similar if hand-written parser becomes unmaintainable.
 - [ ] **Snapshot Optimization**: Implement copy-on-write instead of full cloning for memory efficiency.
 - [ ] **Save/Load**: Capability to save execution trace to file.
+
+## Completed Cleanup
+- [x] Removed unused `RuntimeError::Generic` variant and `RuntimeError::format()` method.
+- [x] Removed unused `Theme.bg` field.
+- [x] Removed unused `MockTerminal::println`, `delete_output_from_line`, `clear` methods.
+- [x] Removed unused `SnapshotManager::latest`, `count`, `clear` methods.
