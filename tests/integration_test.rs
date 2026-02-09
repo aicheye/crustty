@@ -228,7 +228,8 @@ fn test_heap_use_after_free_error() {
     let result = interpreter.run();
 
     assert!(result.is_err(), "Expected use-after-free error");
-    let error_msg = format!("{:?}", result.unwrap_err());
+    let error = result.unwrap_err();
+    let error_msg = format!("{}", error);
     assert!(
         error_msg.contains("Use-after-free") || error_msg.contains("freed"),
         "Error message should mention use-after-free or freed, got: {}",

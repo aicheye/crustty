@@ -49,19 +49,13 @@ impl Interpreter {
                         })?;
 
                 for (i, &byte) in bytes.iter().enumerate() {
-                    self.heap.write_byte(addr + i as u64, byte).map_err(|e| {
-                        RuntimeError::InvalidMemoryOperation {
-                            message: e,
-                            location: *loc,
-                        }
-                    })?;
+                    self.heap
+                        .write_byte(addr + i as u64, byte)
+                        .map_err(|e| Self::map_heap_error(e, *loc))?;
                 }
                 self.heap
                     .write_byte(addr + bytes.len() as u64, 0)
-                    .map_err(|e| RuntimeError::InvalidMemoryOperation {
-                        message: e,
-                        location: *loc,
-                    })?;
+                    .map_err(|e| Self::map_heap_error(e, *loc))?;
 
                 Ok(Value::Pointer(addr))
             }
@@ -604,15 +598,10 @@ impl Interpreter {
                             if let Some(ptr_type) = pointee_type {
                                 self.deserialize_value_from_heap(&ptr_type, addr, location)
                             } else {
-                                let bytes = self.heap.read_bytes_at(addr, 4).map_err(|e| {
-                                    RuntimeError::InvalidMemoryOperation {
-                                        message: format!(
-                                            "Failed to read from address 0x{:x}: {}",
-                                            addr, e
-                                        ),
-                                        location,
-                                    }
-                                })?;
+                                let bytes = self
+                                    .heap
+                                    .read_bytes_at(addr, 4)
+                                    .map_err(|e| Self::map_heap_error(e, location))?;
 
                                 if bytes.len() == 4 {
                                     let int_val = i32::from_le_bytes([

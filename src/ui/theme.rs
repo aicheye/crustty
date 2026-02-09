@@ -1,8 +1,6 @@
 use ratatui::style::Color;
 
 pub struct Theme {
-    #[allow(dead_code)] // Background color field for future use
-    pub bg: Color,
     pub fg: Color,
     pub primary: Color,   // Blue
     pub secondary: Color, // Orange
@@ -22,7 +20,6 @@ pub struct Theme {
 }
 
 pub const DEFAULT_THEME: Theme = Theme {
-    bg: Color::Rgb(30, 30, 46),
     fg: Color::Rgb(205, 214, 244),
     primary: Color::Rgb(137, 180, 250),   // Blue
     secondary: Color::Rgb(250, 179, 135), // Orange

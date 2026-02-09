@@ -236,12 +236,11 @@ impl Interpreter {
             self.enter_scope();
             for stmt in then_branch {
                 let needs_snapshot = self.execute_statement(stmt)?;
-                if self.finished {
-                    self.exit_scope();
-                    return Ok(());
-                }
-
-                if self.should_break || self.should_continue {
+                if self.finished
+                    || self.should_break
+                    || self.should_continue
+                    || self.goto_target.is_some()
+                {
                     self.exit_scope();
                     return Ok(());
                 }
@@ -255,12 +254,11 @@ impl Interpreter {
             self.enter_scope();
             for stmt in else_stmts {
                 let needs_snapshot = self.execute_statement(stmt)?;
-                if self.finished {
-                    self.exit_scope();
-                    return Ok(());
-                }
-
-                if self.should_break || self.should_continue {
+                if self.finished
+                    || self.should_break
+                    || self.should_continue
+                    || self.goto_target.is_some()
+                {
                     self.exit_scope();
                     return Ok(());
                 }
@@ -298,7 +296,7 @@ impl Interpreter {
             self.enter_scope();
             for stmt in body {
                 let needs_snapshot = self.execute_statement(stmt)?;
-                if self.finished {
+                if self.finished || self.goto_target.is_some() {
                     self.exit_scope();
                     self.execution_depth -= 1;
                     return Ok(());
@@ -338,7 +336,7 @@ impl Interpreter {
             self.enter_scope();
             for stmt in body {
                 let needs_snapshot = self.execute_statement(stmt)?;
-                if self.finished {
+                if self.finished || self.goto_target.is_some() {
                     self.exit_scope();
                     self.execution_depth -= 1;
                     return Ok(());
@@ -406,7 +404,7 @@ impl Interpreter {
             self.enter_scope(); // Scope for body
             for stmt in body {
                 let needs_snapshot = self.execute_statement(stmt)?;
-                if self.finished {
+                if self.finished || self.goto_target.is_some() {
                     self.exit_scope(); // Exit body scope
                     self.exit_scope(); // Exit loop scope
                     self.execution_depth -= 1;
@@ -488,7 +486,7 @@ impl Interpreter {
 
                 for stmt in statements {
                     let needs_snapshot = self.execute_statement(stmt)?;
-                    if self.finished {
+                    if self.finished || self.goto_target.is_some() {
                         self.exit_scope();
                         return Ok(());
                     }
@@ -608,6 +606,16 @@ impl Interpreter {
             if needs_snapshot {
                 self.take_snapshot()?;
             }
+        }
+
+        // Check for unresolved goto target (label not found in function)
+        if let Some(ref label) = self.goto_target {
+            let err = RuntimeError::UndefinedVariable {
+                name: format!("label '{}'", label),
+                location,
+            };
+            self.goto_target = None;
+            return Err(err);
         }
 
         let return_val = self.return_value.clone().unwrap_or(Value::Int(0));

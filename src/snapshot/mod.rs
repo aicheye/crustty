@@ -15,12 +15,6 @@ impl MockTerminal {
         MockTerminal { lines: Vec::new() }
     }
 
-    /// Add a line of output
-    #[allow(dead_code)] // API method, used via print()
-    pub fn println(&mut self, text: String, location: SourceLocation) {
-        self.lines.push(TerminalLine { text, location });
-    }
-
     /// Print without newline
     pub fn print(&mut self, text: String, location: SourceLocation) {
         if let Some(last) = self.lines.last_mut() {
@@ -30,12 +24,6 @@ impl MockTerminal {
             }
         }
         self.lines.push(TerminalLine { text, location });
-    }
-
-    /// Delete all output from a specific source line
-    #[allow(dead_code)] // Utility method for reverse execution, not currently implemented
-    pub fn delete_output_from_line(&mut self, line: usize) {
-        self.lines.retain(|tl| tl.location.line != line);
     }
 
     /// Get all lines as a vector of strings
@@ -52,12 +40,6 @@ impl MockTerminal {
                 result
             })
             .collect()
-    }
-
-    /// Clear all output
-    #[allow(dead_code)] // Utility method for resetting state
-    pub fn clear(&mut self) {
-        self.lines.clear();
     }
 }
 
@@ -139,24 +121,12 @@ impl SnapshotManager {
         Ok(())
     }
 
-    /// Get the latest snapshot
-    #[allow(dead_code)] // API method for snapshot access
-    pub fn latest(&self) -> Option<&Snapshot> {
-        self.snapshots.last()
-    }
-
     /// Get a snapshot by index
     pub fn get(&self, index: usize) -> Option<&Snapshot> {
         self.snapshots.get(index)
     }
 
     /// Get the number of snapshots
-    #[allow(dead_code)] // API method, currently using len()
-    pub fn count(&self) -> usize {
-        self.snapshots.len()
-    }
-
-    /// Get the number of snapshots (alias for count, for consistency)
     pub fn len(&self) -> usize {
         self.snapshots.len()
     }
@@ -174,12 +144,5 @@ impl SnapshotManager {
     /// Get max memory limit
     pub fn memory_limit(&self) -> usize {
         self.max_memory
-    }
-
-    /// Clear all snapshots
-    #[allow(dead_code)] // API method for resetting state
-    pub fn clear(&mut self) {
-        self.snapshots.clear();
-        self.current_memory = 0;
     }
 }

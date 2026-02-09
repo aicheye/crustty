@@ -246,31 +246,22 @@ impl Interpreter {
                                     let bytes = n.to_le_bytes();
                                     for (i, &byte) in bytes.iter().enumerate() {
                                         self.heap.write_byte(addr + i as u64, byte).map_err(
-                                            |e| RuntimeError::InvalidMemoryOperation {
-                                                message: e,
-                                                location,
-                                            },
+                                            |e| Self::map_heap_error(e, location),
                                         )?;
                                     }
                                     Ok(())
                                 }
                                 Value::Char(c) => {
-                                    self.heap.write_byte(addr, *c as u8).map_err(|e| {
-                                        RuntimeError::InvalidMemoryOperation {
-                                            message: e,
-                                            location,
-                                        }
-                                    })?;
+                                    self.heap
+                                        .write_byte(addr, *c as u8)
+                                        .map_err(|e| Self::map_heap_error(e, location))?;
                                     Ok(())
                                 }
                                 Value::Pointer(ptr_addr) => {
                                     let bytes = ptr_addr.to_le_bytes();
                                     for (i, &byte) in bytes.iter().enumerate() {
                                         self.heap.write_byte(addr + i as u64, byte).map_err(
-                                            |e| RuntimeError::InvalidMemoryOperation {
-                                                message: e,
-                                                location,
-                                            },
+                                            |e| Self::map_heap_error(e, location),
                                         )?;
                                     }
                                     Ok(())
@@ -279,10 +270,7 @@ impl Interpreter {
                                     let bytes = 0u64.to_le_bytes();
                                     for (i, &byte) in bytes.iter().enumerate() {
                                         self.heap.write_byte(addr + i as u64, byte).map_err(
-                                            |e| RuntimeError::InvalidMemoryOperation {
-                                                message: e,
-                                                location,
-                                            },
+                                            |e| Self::map_heap_error(e, location),
                                         )?;
                                     }
                                     Ok(())
@@ -563,21 +551,15 @@ impl Interpreter {
                 for (i, byte) in bytes.iter().enumerate() {
                     self.heap
                         .write_byte(base_addr + i as u64, *byte)
-                        .map_err(|e| RuntimeError::InvalidMemoryOperation {
-                            message: format!("Failed to write int to heap: {}", e),
-                            location,
-                        })?;
+                        .map_err(|e| Self::map_heap_error(e, location))?;
                 }
                 Ok(())
             }
             Value::Char(c) => {
                 // Write 1 byte (c is already i8)
-                self.heap.write_byte(base_addr, *c as u8).map_err(|e| {
-                    RuntimeError::InvalidMemoryOperation {
-                        message: format!("Failed to write char to heap: {}", e),
-                        location,
-                    }
-                })?;
+                self.heap
+                    .write_byte(base_addr, *c as u8)
+                    .map_err(|e| Self::map_heap_error(e, location))?;
                 Ok(())
             }
             Value::Uninitialized => {
@@ -591,22 +573,16 @@ impl Interpreter {
                 for (i, byte) in bytes.iter().enumerate() {
                     self.heap
                         .write_byte(base_addr + i as u64, *byte)
-                        .map_err(|e| RuntimeError::InvalidMemoryOperation {
-                            message: format!("Failed to write pointer to heap: {}", e),
-                            location,
-                        })?;
+                        .map_err(|e| Self::map_heap_error(e, location))?;
                 }
                 Ok(())
             }
             Value::Null => {
                 // Write 8 bytes of zeros
                 for i in 0..8 {
-                    self.heap.write_byte(base_addr + i, 0).map_err(|e| {
-                        RuntimeError::InvalidMemoryOperation {
-                            message: format!("Failed to write null to heap: {}", e),
-                            location,
-                        }
-                    })?;
+                    self.heap
+                        .write_byte(base_addr + i, 0)
+                        .map_err(|e| Self::map_heap_error(e, location))?;
                 }
                 Ok(())
             }
@@ -706,35 +682,29 @@ impl Interpreter {
                 // Read 4 bytes (little-endian)
                 let mut bytes = [0u8; 4];
                 for (i, byte) in bytes.iter_mut().enumerate() {
-                    *byte = self.heap.read_byte(base_addr + i as u64).map_err(|e| {
-                        RuntimeError::InvalidMemoryOperation {
-                            message: format!("Failed to read int from heap: {}", e),
-                            location,
-                        }
-                    })?;
+                    *byte = self
+                        .heap
+                        .read_byte(base_addr + i as u64)
+                        .map_err(|e| Self::map_heap_error(e, location))?;
                 }
                 Ok(Value::Int(i32::from_le_bytes(bytes)))
             }
             BaseType::Char if value_type.pointer_depth == 0 => {
                 // Read 1 byte
-                let byte = self.heap.read_byte(base_addr).map_err(|e| {
-                    RuntimeError::InvalidMemoryOperation {
-                        message: format!("Failed to read char from heap: {}", e),
-                        location,
-                    }
-                })?;
+                let byte = self
+                    .heap
+                    .read_byte(base_addr)
+                    .map_err(|e| Self::map_heap_error(e, location))?;
                 Ok(Value::Char(byte as i8))
             }
             _ if value_type.pointer_depth > 0 => {
                 // Read 8 bytes (pointer)
                 let mut bytes = [0u8; 8];
                 for (i, byte) in bytes.iter_mut().enumerate() {
-                    *byte = self.heap.read_byte(base_addr + i as u64).map_err(|e| {
-                        RuntimeError::InvalidMemoryOperation {
-                            message: format!("Failed to read pointer from heap: {}", e),
-                            location,
-                        }
-                    })?;
+                    *byte = self
+                        .heap
+                        .read_byte(base_addr + i as u64)
+                        .map_err(|e| Self::map_heap_error(e, location))?;
                 }
                 let addr = u64::from_le_bytes(bytes);
                 if addr == 0 {

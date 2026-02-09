@@ -74,6 +74,9 @@ pub struct Interpreter {
     /// Return value from the last function call
     pub(crate) return_value: Option<Value>,
 
+    /// Target label for goto execution (forward jumps only)
+    pub(crate) goto_target: Option<String>,
+
     /// Mapping from heap pointer addresses to their types
     pub(crate) pointer_types: FxHashMap<u64, Type>,
 
@@ -139,6 +142,7 @@ impl Interpreter {
             stack_address_map: FxHashMap::default(),
             next_stack_address: STACK_ADDRESS_START,
             return_value: None,
+            goto_target: None,
             pointer_types: FxHashMap::default(),
             field_info_cache: FxHashMap::default(),
             last_runtime_error: None,
@@ -182,6 +186,16 @@ impl Interpreter {
             }
         }
 
+        // Check for unresolved goto target
+        if let Some(ref label) = self.goto_target {
+            let err = RuntimeError::UndefinedVariable {
+                name: format!("label '{}'", label),
+                location: self.current_location,
+            };
+            self.last_runtime_error = Some(err.clone());
+            return Err(err);
+        }
+
         self.finished = true;
         Ok(())
     }
@@ -203,6 +217,18 @@ impl Interpreter {
     /// Execute a single statement
     /// Returns true if a snapshot should be taken after this statement
     pub(crate) fn execute_statement(&mut self, stmt: &AstNode) -> Result<bool, RuntimeError> {
+        // If searching for a goto label, skip statements until we find the target
+        if let Some(ref target) = self.goto_target {
+            if let AstNode::Label { name, location } = stmt {
+                if name == target {
+                    self.goto_target = None;
+                    self.current_location = *location;
+                    return Ok(true);
+                }
+            }
+            return Ok(false);
+        }
+
         // Update current location
         if let Some(loc) = Self::get_location(stmt) {
             self.current_location = loc;
@@ -296,7 +322,11 @@ impl Interpreter {
                 self.enter_scope();
                 for stmt in statements {
                     let needs_snapshot = self.execute_statement(stmt)?;
-                    if self.finished || self.should_break || self.should_continue {
+                    if self.finished
+                        || self.should_break
+                        || self.should_continue
+                        || self.goto_target.is_some()
+                    {
                         self.exit_scope();
                         return Ok(false);
                     }
@@ -339,6 +369,18 @@ impl Interpreter {
             } => {
                 self.execute_switch(expr, cases, *location)?;
                 Ok(false)
+            }
+
+            AstNode::Goto { label, location } => {
+                self.current_location = *location;
+                self.goto_target = Some(label.clone());
+                Ok(true)
+            }
+
+            AstNode::Label { location, .. } => {
+                // Labels are no-ops when not targeted by a goto
+                self.current_location = *location;
+                Ok(true)
             }
 
             _ => Err(RuntimeError::UnsupportedOperation {
@@ -559,6 +601,30 @@ impl Interpreter {
             AstNode::SizeofType { location, .. } => Some(*location),
             AstNode::SizeofExpr { location, .. } => Some(*location),
             _ => None,
+        }
+    }
+
+    /// Convert a heap string error into the appropriate RuntimeError variant.
+    /// Detects use-after-free errors and produces `RuntimeError::UseAfterFree`
+    /// instead of the generic `InvalidMemoryOperation`.
+    pub(crate) fn map_heap_error(error: String, location: SourceLocation) -> RuntimeError {
+        if let Some(uaf_pos) = error.find("Use-after-free: address 0x") {
+            // Parse address from "Use-after-free: address 0x{hex} has been freed"
+            let hex_start = uaf_pos + "Use-after-free: address 0x".len();
+            let hex_str = &error[hex_start..];
+            let hex_end = hex_str
+                .find(|c: char| !c.is_ascii_hexdigit())
+                .unwrap_or(hex_str.len());
+            if let Ok(addr) = u64::from_str_radix(&hex_str[..hex_end], 16) {
+                return RuntimeError::UseAfterFree {
+                    address: addr,
+                    location,
+                };
+            }
+        }
+        RuntimeError::InvalidMemoryOperation {
+            message: error,
+            location,
         }
     }
 
