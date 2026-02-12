@@ -239,7 +239,7 @@ impl App {
         // Split into 2 columns
         let columns = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(pane_area);
 
         // Left column: Source (top) | Terminal (bottom)
