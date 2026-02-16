@@ -206,19 +206,9 @@ cargo check
 - `rustfmt.toml`: Code formatting rules
 - `Cargo.toml`: Dependencies and build configuration
 
-## Refactoring History
-
-The codebase has undergone a comprehensive 7-phase refactoring to improve:
-- Module organization and separation of concerns
-- Error handling with specific error types
-- Documentation and code clarity
-- Performance optimizations
-
-See `refactoring.md` for detailed refactoring notes.
-
 ## Limitations
 
-This is a pedagogical tool, not a production C interpreter:
+This is NOT a production C interpreter:
 
 - Subset of C (no preprocessor, typedefs, unions, enums, function pointers)
 - No optimization or JIT compilation
