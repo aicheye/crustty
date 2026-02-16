@@ -42,9 +42,7 @@ The terminal interface provides multiple panes:
 - `q`: Quit
 - Arrow keys: Navigate through stack/heap panes
 
-## Installation
-
-### From Precompiled Binaries
+## Quick Start
 
 Precompiled binaries for the following platforms will be available in the releases section of the GitHub repository:
 
@@ -52,20 +50,7 @@ Precompiled binaries for the following platforms will be available in the releas
 - macOS (x86_64 and ARM)
 - Linux (x86_64 and ARM)
 
-### From Source
-
-#### Prerequisites
-
-- Rust toolchain (1.70 or later)
-- Terminal with Unicode and color support
-
-#### Building
-
-```bash
-cargo build --release
-```
-
-The binary will be available at `target/release/crustty`.
+Download the appropriate binary for your platform, rename it to `crustty` (or `crustty.exe` on Windows), and add the directory containing the binary to your PATH.
 
 ## Usage
 
@@ -78,6 +63,21 @@ Example:
 ```bash
 crustty examples/fibonacci.c
 ```
+
+## Installation From Source
+
+### Prerequisites
+
+- Rust toolchain (1.70 or later)
+- Terminal with Unicode and color support
+
+### Building
+
+```bash
+cargo build --release
+```
+
+The binary will be available at `target/release/crustty`.
 
 ## Project Structure
 
