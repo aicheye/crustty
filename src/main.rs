@@ -1,10 +1,8 @@
 // CRusTTY: Time-Travel C Interpreter with Memory Visualization
 
-mod interpreter;
-mod memory;
-mod parser;
-mod snapshot;
-mod ui;
+use crustty::interpreter;
+use crustty::parser;
+use crustty::ui;
 
 use std::fs;
 use std::io;
