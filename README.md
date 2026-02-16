@@ -55,13 +55,17 @@ Download the appropriate binary for your platform, rename it to `crustty` (or `c
 ## Usage
 
 ```bash
-crustty <source.c>
+crustty <source.c | example_name>
 ```
 
-Example:
+Examples:
 
 ```bash
-crustty examples/fibonacci.c
+# Run the bundled comprehensive example (features demo)
+crustty default
+
+# Run your own C file
+crustty path/to/your/file.c
 ```
 
 ## Installation From Source

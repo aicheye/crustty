@@ -24,15 +24,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command-line arguments
     let args: Vec<String> = std::env::args().collect();
 
-    if args.len() < 2 {
+    // Get the first argument
+    let arg = if args.len() < 2 {
+        // If no arguments, check if we should run an example or show help
         let program_name = args.first().map(|s| s.as_str()).unwrap_or("crustty");
         eprintln!("Error: No input file provided");
         eprintln!();
-        eprintln!("Usage: {} <file.c>", program_name);
+        eprintln!("Usage: {} <file.c> | <example>", program_name);
         eprintln!();
         eprintln!("Examples:");
         eprintln!(
-            "  {} examples/default.c      # Run the comprehensive example",
+            "  {} default                 # Run the comprehensive example",
             program_name
         );
         eprintln!(
@@ -40,27 +42,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             program_name
         );
         eprintln!();
-        eprintln!("Try the default example to see all supported features:");
-        eprintln!("  {} examples/default.c", program_name);
         std::process::exit(1);
-    }
+    } else {
+        &args[1]
+    };
 
-    let test_file = &args[1];
-
-    if !Path::new(test_file).exists() {
-        eprintln!("Error: File '{}' not found", test_file);
-        eprintln!(
-            "Usage: {} [file.c]",
-            args.first().map(|s| s.as_str()).unwrap_or("crustty")
-        );
-        std::process::exit(1);
-    }
-
-    // Read source code
-    let source = fs::read_to_string(test_file)?;
+    // Determine source code and filename for display
+    let (source, filename) = match arg.as_str() {
+        "default" => (
+            include_str!("../examples/default.c").to_string(),
+            "examples/default.c",
+        ),
+        _ => {
+            let path = Path::new(arg);
+            if !path.exists() {
+                eprintln!("Error: File '{}' not found", arg);
+                std::process::exit(1);
+            }
+            (fs::read_to_string(path)?, arg.as_str())
+        }
+    };
 
     // Parse the source code
-    eprintln!("Parsing {}...", test_file);
+    eprintln!("Parsing {}...", filename);
     let (program, parse_error) = match Parser::new(&source) {
         Ok(mut parser) => match parser.parse_program() {
             Ok(prog) => {
