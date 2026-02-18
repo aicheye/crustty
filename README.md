@@ -21,7 +21,7 @@ CRusTTY is an educational tool for understanding C program execution. It provide
 - **Control Flow**: `if/else`, `while`, `for`, `do-while`, `switch/case`
 - **Operators**: Arithmetic, logical, bitwise, comparison, ternary
 - **Memory**: Stack-based local variables, dynamic heap allocation via `malloc`/`free`
-- **Built-ins**: `printf` (with format specifiers), `malloc`, `free`, `sizeof`
+- **Built-ins**: `printf` and `scanf` (with format specifiers), `malloc`, `free`, `sizeof`
 
 ### TUI Interface
 
@@ -30,7 +30,7 @@ The terminal interface provides multiple panes:
 - **Source Code**: Syntax-highlighted C code with execution line indicator
 - **Stack**: Call stack with local variables and their values
 - **Heap**: Dynamic memory allocations with type information
-- **Terminal**: Output from `printf` and other I/O operations
+- **Terminal**: Output from `printf` and input prompts from `scanf`
 - **Status Bar**: Keybindings and execution state
 
 ### Keybindings
@@ -40,6 +40,7 @@ The terminal interface provides multiple panes:
 - `c`: Continue execution
 - `r`: Restart program
 - `q`: Quit
+- `esc`: Exit input mode (in `scanf` input prompt)
 - Arrow keys: Navigate through stack/heap panes
 
 ## Quick Start
