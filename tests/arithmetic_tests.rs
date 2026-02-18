@@ -21,7 +21,11 @@ fn test_arithmetic_coercion() {
     // Based on `get_output()` it flat_maps split('\n').
 
     let output = interpreter.terminal().get_output();
-    let joined_output = output.join("\n");
+    let joined_output = output
+        .iter()
+        .map(|(s, _)| s.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
 
     println!("Interpreter output:\n{}", joined_output);
 
@@ -90,7 +94,11 @@ fn test_pointer_arithmetic() {
     interpreter.run().expect("Execution failed");
 
     let output = interpreter.terminal().get_output();
-    let joined = output.join("\n");
+    let joined = output
+        .iter()
+        .map(|(s, _)| s.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
     println!("Pointer Output:\n{}", joined);
 
     assert!(joined.contains("Pointer Write OK"));
