@@ -531,6 +531,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match name {
             "printf" => self.builtin_printf(args, location),
+            "scanf" => self.builtin_scanf(args, location),
             "malloc" => self.builtin_malloc(args, location),
             "free" => self.builtin_free(args, location),
             _ => self.call_user_function(name, args, location),

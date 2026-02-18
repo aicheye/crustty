@@ -5,7 +5,16 @@ use crate::parser::ast::{SourceLocation, Type};
 use rustc_hash::FxHashMap;
 use std::collections::BTreeMap;
 
-/// Mock terminal for capturing printf output
+/// Distinguishes program output (printf) from user input echoed by scanf
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TerminalLineKind {
+    /// Output produced by printf / similar
+    Output,
+    /// User input echoed by scanf
+    Input,
+}
+
+/// Mock terminal for capturing printf output and scanf input echoes
 #[derive(Debug, Clone)]
 pub struct MockTerminal {
     pub lines: Vec<TerminalLine>,
@@ -16,26 +25,42 @@ impl MockTerminal {
         MockTerminal { lines: Vec::new() }
     }
 
-    /// Print without newline
+    /// Append printf output (coalesces consecutive output on the same source line)
     pub fn print(&mut self, text: String, location: SourceLocation) {
         if let Some(last) = self.lines.last_mut() {
-            if last.location.line == location.line {
+            if last.location.line == location.line && last.kind == TerminalLineKind::Output {
                 last.text.push_str(&text);
                 return;
             }
         }
-        self.lines.push(TerminalLine { text, location });
+        self.lines.push(TerminalLine {
+            text,
+            location,
+            kind: TerminalLineKind::Output,
+        });
     }
 
-    /// Get all lines as a vector of strings
-    pub fn get_output(&self) -> Vec<String> {
+    /// Append a scanf input echo as a distinct line (always starts a new line)
+    pub fn print_input(&mut self, text: String, location: SourceLocation) {
+        self.lines.push(TerminalLine {
+            text,
+            location,
+            kind: TerminalLineKind::Input,
+        });
+    }
+
+    /// Get all output/input lines as `(text, kind)` pairs, split on newlines
+    pub fn get_output(&self) -> Vec<(String, TerminalLineKind)> {
         self.lines
             .iter()
             .flat_map(|tl| {
-                // Split by newlines to handle multiple prints from same source line
-                let mut result: Vec<String> = tl.text.split('\n').map(|s| s.to_string()).collect();
-                // Remove trailing empty string if text ended with newline
-                if result.last().is_some_and(|s| s.is_empty()) {
+                let mut result: Vec<(String, TerminalLineKind)> = tl
+                    .text
+                    .split('\n')
+                    .map(|s| (s.to_string(), tl.kind.clone()))
+                    .collect();
+                // Remove trailing empty entry when text ended with a newline
+                if result.last().is_some_and(|(s, _)| s.is_empty()) {
                     result.pop();
                 }
                 result
@@ -55,6 +80,7 @@ impl Default for MockTerminal {
 pub struct TerminalLine {
     pub text: String,
     pub location: SourceLocation,
+    pub kind: TerminalLineKind,
 }
 
 /// Snapshot of execution state
