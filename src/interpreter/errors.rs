@@ -158,6 +158,9 @@ pub enum RuntimeError {
         message: String,
         location: SourceLocation,
     },
+
+    /// Execution is paused waiting for scanf input (internal signal, not a real error)
+    ScanfNeedsInput { location: SourceLocation },
 }
 
 impl RuntimeError {
@@ -187,6 +190,7 @@ impl RuntimeError {
             RuntimeError::InvalidString { location, .. } => Some(location),
             RuntimeError::InvalidMallocSize { location, .. } => Some(location),
             RuntimeError::HistoryOperationFailed { location, .. } => Some(location),
+            RuntimeError::ScanfNeedsInput { location } => Some(location),
             RuntimeError::OutOfMemory { .. } => None,
             RuntimeError::SnapshotLimitExceeded { .. } => None,
             RuntimeError::NoMainFunction => None,
@@ -388,6 +392,9 @@ impl fmt::Display for RuntimeError {
                     "History operation failed: {} at line {}",
                     message, location.line
                 )
+            }
+            RuntimeError::ScanfNeedsInput { location } => {
+                write!(f, "scanf needs input at line {}", location.line)
             }
         }
     }

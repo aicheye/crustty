@@ -142,12 +142,14 @@ pub struct SourceScrollState {
 }
 
 /// Render the source code pane
+#[allow(clippy::too_many_arguments)]
 pub fn render_source_pane(
     frame: &mut Frame,
     area: Rect,
     source_code: &str,
     current_line: usize,
-    error_line: Option<usize>,
+    is_error: bool,
+    is_scanf: bool,
     is_focused: bool,
     scroll_state: &mut SourceScrollState,
 ) {
@@ -204,8 +206,6 @@ pub fn render_source_pane(
         .map(|(idx, line)| {
             let line_num = idx + 1;
             let is_current = line_num == current_line;
-            let is_error = error_line == Some(line_num);
-
             let line_num_str = format!("{:4} ", line_num);
 
             // Base style for the line
@@ -218,6 +218,17 @@ pub fn render_source_pane(
                     Style::default()
                         .bg(DEFAULT_THEME.error)
                         .fg(ratatui::style::Color::White) // White text on red for visibility
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else if is_scanf {
+                // SCANF LINE: Secondary background with bold line number
+                (
+                    Style::default()
+                        .fg(DEFAULT_THEME.secondary)
+                        .add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .bg(DEFAULT_THEME.secondary)
+                        .fg(ratatui::style::Color::Black) // Black text on orange for visibility
                         .add_modifier(Modifier::BOLD),
                 )
             } else if is_current {

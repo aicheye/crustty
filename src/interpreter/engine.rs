@@ -86,6 +86,21 @@ pub struct Interpreter {
 
     /// Last runtime error that occurred during execution (if any)
     pub(crate) last_runtime_error: Option<RuntimeError>,
+
+    /// Accumulated stdin tokens (whitespace-split from all user input lines, shared across scanf calls)
+    pub(crate) stdin_tokens: Vec<String>,
+
+    /// Index of the next stdin token to consume during execution (reset to 0 on rerun)
+    pub(crate) stdin_token_index: usize,
+
+    /// Whether execution is currently paused at a scanf waiting for user input
+    pub(crate) paused_at_scanf: bool,
+
+    /// Whether execution has run to completion (as opposed to paused at scanf)
+    pub(crate) execution_finished: bool,
+
+    /// Memory limit for snapshots (stored so we can recreate the manager on rerun)
+    pub(crate) snapshot_memory_limit: usize,
 }
 
 impl Interpreter {
@@ -147,10 +162,15 @@ impl Interpreter {
             pointer_types: FxHashMap::default(),
             field_info_cache: FxHashMap::default(),
             last_runtime_error: None,
+            stdin_tokens: Vec::new(),
+            stdin_token_index: 0,
+            paused_at_scanf: false,
+            execution_finished: false,
+            snapshot_memory_limit,
         }
     }
 
-    /// Run the program from start to finish
+    /// Run the program from start to finish (or until a scanf needs input)
     pub fn run(&mut self) -> Result<(), RuntimeError> {
         // Find main function
         let main_fn = self
@@ -179,11 +199,25 @@ impl Interpreter {
                         }
                     }
                 }
+                Err(RuntimeError::ScanfNeedsInput { location }) => {
+                    // Snapshot at the scanf line before pausing, so the source
+                    // pane highlights the scanf line (not the previous statement).
+                    // Use the location from the error itself: current_location may
+                    // still point at the last body statement (e.g. printf) when
+                    // scanf appears in a loop condition.
+                    self.current_location = location;
+                    let _ = self.take_snapshot();
+                    self.paused_at_scanf = true;
+                    return Ok(());
+                }
                 Err(e) => {
                     let _ = self.take_snapshot();
                     self.last_runtime_error = Some(e.clone());
                     return Err(e);
                 }
+            }
+            if self.finished {
+                break;
             }
         }
 
@@ -198,7 +232,63 @@ impl Interpreter {
         }
 
         self.finished = true;
+        self.execution_finished = true;
         Ok(())
+    }
+
+    /// Reset all mutable execution state so we can rerun the same program.
+    /// Preserves `function_defs`, `struct_defs`, `field_info_cache`, `stdin_tokens`,
+    /// and `snapshot_memory_limit`.
+    fn reset_for_rerun(&mut self) {
+        self.stack = Stack::new();
+        self.heap = Heap::default();
+        self.terminal = MockTerminal::new();
+        self.snapshot_manager = SnapshotManager::new(self.snapshot_memory_limit);
+        self.history_position = 0;
+        self.execution_depth = 0;
+        self.finished = false;
+        self.should_break = false;
+        self.should_continue = false;
+        self.stack_address_map = BTreeMap::new();
+        self.next_stack_address = STACK_ADDRESS_START;
+        self.return_value = None;
+        self.goto_target = None;
+        self.pointer_types = FxHashMap::default();
+        self.last_runtime_error = None;
+        self.stdin_token_index = 0;
+        self.paused_at_scanf = false;
+        self.execution_finished = false;
+        self.current_location = SourceLocation::new(1, 1);
+    }
+
+    /// Provide a line of stdin input. The line is split by whitespace and tokens are appended
+    /// to the shared stdin queue (consumed across all scanf calls). The program is re-executed
+    /// with all accumulated tokens. After this call the interpreter is positioned at the
+    /// snapshot just after the scanf.
+    pub fn provide_scanf_input(&mut self, input: String) -> Result<(), RuntimeError> {
+        let position_before = self.history_position;
+        let new_tokens: Vec<String> = input.split_whitespace().map(|s| s.to_string()).collect();
+        self.stdin_tokens.extend(new_tokens);
+        self.reset_for_rerun();
+        self.run()?;
+        // Navigate to the post-scanf snapshot.  position_before is the index of
+        // the "at-scanf" snapshot (taken just before pausing); after rerun that
+        // same index holds the completed-scanf state.
+        let target = position_before.min(self.snapshot_manager.len().saturating_sub(1));
+        if let Some(snapshot) = self.snapshot_manager.get(target).cloned() {
+            self.restore_snapshot(&snapshot);
+        }
+        Ok(())
+    }
+
+    /// Returns true if execution is paused waiting for scanf input.
+    pub fn is_paused_at_scanf(&self) -> bool {
+        self.paused_at_scanf
+    }
+
+    /// Returns true if the program has run to completion (not paused at scanf).
+    pub fn is_execution_complete(&self) -> bool {
+        self.execution_finished
     }
 
     /// Enter a new scope in the current stack frame

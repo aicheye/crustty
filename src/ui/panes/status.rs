@@ -9,15 +9,19 @@ use ratatui::{
     Frame,
 };
 
-/// Render the status bar at the bottom
+/// Render the status bar at the bottom.
+///
+/// `total_steps` is `None` when execution is paused at a scanf (total unknown).
+#[allow(clippy::too_many_arguments)]
 pub fn render_status_bar(
     frame: &mut Frame,
     area: Rect,
     message: &str,
     current_step: usize,
-    total_steps: usize,
+    total_steps: Option<usize>,
     error_state: Option<&crate::ui::app::ErrorState>,
     is_playing: bool,
+    is_scanf_input: bool,
 ) {
     // Split status bar into left and right
     let layout = ratatui::layout::Layout::default()
@@ -30,10 +34,12 @@ pub fn render_status_bar(
 
     // Left side: Step info and status
     let step_text = if error_state.is_some() {
-        // Show indeterminate counter when error occurred
         format!(" Step {}/? ", current_step + 1)
+    } else if let Some(total) = total_steps {
+        format!(" Step {}/{} ", current_step + 1, total)
     } else {
-        format!(" Step {}/{} ", current_step + 1, total_steps)
+        // paused at scanf — total is unknown
+        format!(" Step {}/? ", current_step + 1)
     };
 
     let left_spans = vec![
@@ -41,7 +47,9 @@ pub fn render_status_bar(
             step_text,
             Style::default()
                 .bg(if error_state.is_some() {
-                    DEFAULT_THEME.error // Red background for error state
+                    DEFAULT_THEME.error
+                } else if is_scanf_input {
+                    DEFAULT_THEME.secondary
                 } else {
                     DEFAULT_THEME.primary
                 })
@@ -59,7 +67,7 @@ pub fn render_status_bar(
             Style::default()
                 .bg(DEFAULT_THEME.current_line_bg)
                 .fg(if error_state.is_some() {
-                    DEFAULT_THEME.error // Red text for error messages
+                    DEFAULT_THEME.error
                 } else {
                     DEFAULT_THEME.fg
                 }),
@@ -90,10 +98,6 @@ pub fn render_status_bar(
         Span::styled(" step over ", desc_style),
         Span::styled("│", sep_style),
         Span::styled(" ", desc_style),
-        Span::styled(" 1-9 ", key_style),
-        Span::styled(" jump ", desc_style),
-        Span::styled("│", sep_style),
-        Span::styled(" ", desc_style),
         Span::styled(" ⎵ ", key_style),
         Span::styled(" play ", desc_style),
         Span::styled("│", sep_style),
@@ -108,9 +112,18 @@ pub fn render_status_bar(
 
     // Show status indicators based on position and state
     let is_at_start = current_step == 0;
-    let is_at_end = current_step + 1 >= total_steps;
+    let is_at_end = total_steps.is_some_and(|total| current_step + 1 >= total);
 
-    if is_playing {
+    if is_scanf_input {
+        right_spans.push(Span::styled("│", sep_style));
+        right_spans.push(Span::styled(
+            " ⌨ INPUT ",
+            Style::default()
+                .bg(DEFAULT_THEME.secondary)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        ));
+    } else if is_playing {
         right_spans.push(Span::styled("│", sep_style));
         right_spans.push(Span::styled(
             " ▶ PLAYING ",

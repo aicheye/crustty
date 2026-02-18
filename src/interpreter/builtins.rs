@@ -19,7 +19,7 @@
 use crate::interpreter::engine::Interpreter;
 use crate::interpreter::errors::RuntimeError;
 use crate::memory::value::Value;
-use crate::parser::ast::{AstNode, SourceLocation};
+use crate::parser::ast::{AstNode, SourceLocation, UnOp};
 
 impl Interpreter {
     pub(crate) fn builtin_printf(
@@ -255,6 +255,173 @@ impl Interpreter {
             message: "Invalid UTF-8 in string".to_string(),
             location,
         })
+    }
+
+    pub(crate) fn builtin_scanf(
+        &mut self,
+        args: &[AstNode],
+        location: SourceLocation,
+    ) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            return Err(RuntimeError::ArgumentCountMismatch {
+                function: "scanf".to_string(),
+                expected: 1,
+                got: 0,
+                location,
+            });
+        }
+
+        let format_str = match &args[0] {
+            AstNode::StringLiteral(s, _) => s.clone(),
+            _ => {
+                return Err(RuntimeError::InvalidPrintfFormat {
+                    message: "scanf format must be a string literal".to_string(),
+                    location,
+                });
+            }
+        };
+
+        let matched = self.parse_scanf_input(&format_str, &args[1..], location)?;
+        Ok(Value::Int(matched as i32))
+    }
+
+    /// Parse a scanf format string, consuming tokens from the shared stdin queue and writing
+    /// converted values to the pointer arguments. Returns `ScanfNeedsInput` if the token
+    /// queue runs dry before all specifiers are satisfied. Echoes consumed tokens to the
+    /// terminal (one echo per scanf call).
+    fn parse_scanf_input(
+        &mut self,
+        format: &str,
+        args: &[AstNode],
+        location: SourceLocation,
+    ) -> Result<usize, RuntimeError> {
+        let initial_index = self.stdin_token_index;
+        let mut arg_idx = 0;
+        let mut matched = 0;
+        let mut chars = format.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch != '%' {
+                continue;
+            }
+            let spec = match chars.next() {
+                Some(s) => s,
+                None => break,
+            };
+
+            if arg_idx >= args.len() {
+                break;
+            }
+
+            // Signal a pause if the token queue is exhausted
+            if self.stdin_token_index >= self.stdin_tokens.len() {
+                return Err(RuntimeError::ScanfNeedsInput { location });
+            }
+
+            let token = self.stdin_tokens[self.stdin_token_index].clone();
+            self.stdin_token_index += 1;
+
+            match spec {
+                'd' | 'i' => {
+                    if let Ok(n) = token.parse::<i64>() {
+                        let val = Value::Int(n as i32);
+                        self.write_scanf_value(val, &args[arg_idx], location)?;
+                        matched += 1;
+                    }
+                    arg_idx += 1;
+                }
+                'u' => {
+                    if let Ok(n) = token.parse::<u64>() {
+                        let val = Value::Int(n as i32);
+                        self.write_scanf_value(val, &args[arg_idx], location)?;
+                        matched += 1;
+                    }
+                    arg_idx += 1;
+                }
+                'x' | 'X' => {
+                    let stripped = token
+                        .strip_prefix("0x")
+                        .or_else(|| token.strip_prefix("0X"))
+                        .unwrap_or(token.as_str());
+                    if let Ok(n) = u32::from_str_radix(stripped, 16) {
+                        let val = Value::Int(n as i32);
+                        self.write_scanf_value(val, &args[arg_idx], location)?;
+                        matched += 1;
+                    }
+                    arg_idx += 1;
+                }
+                'c' => {
+                    if let Some(c) = token.chars().next() {
+                        let val = Value::Char(c as i8);
+                        self.write_scanf_value(val, &args[arg_idx], location)?;
+                        matched += 1;
+                    }
+                    arg_idx += 1;
+                }
+                's' => {
+                    self.write_scanf_string(&token, &args[arg_idx], location)?;
+                    matched += 1;
+                    arg_idx += 1;
+                }
+                _ => {
+                    // Unknown specifier — skip the arg
+                    arg_idx += 1;
+                }
+            }
+        }
+
+        // Echo all tokens consumed by this scanf call to the terminal
+        let echo = self.stdin_tokens[initial_index..self.stdin_token_index].join(" ");
+        if !echo.is_empty() {
+            self.terminal.print_input(format!("{}\n", echo), location);
+        }
+
+        Ok(matched)
+    }
+
+    /// Write a single scalar value to the lvalue pointed to by a scanf argument.
+    /// The argument is expected to be an address-of expression (e.g. `&x`), so we
+    /// synthesise a dereference lvalue `*(arg)` and delegate to `assign_to_lvalue`.
+    fn write_scanf_value(
+        &mut self,
+        value: Value,
+        arg: &AstNode,
+        location: SourceLocation,
+    ) -> Result<(), RuntimeError> {
+        let deref_lvalue = AstNode::UnaryOp {
+            op: UnOp::Deref,
+            operand: Box::new(arg.clone()),
+            location,
+        };
+        self.assign_to_lvalue(&deref_lvalue, value, location)
+    }
+
+    /// Write a null-terminated string to the buffer pointed to by a scanf `%s` argument.
+    /// Works with both stack char arrays (array decay to pointer) and heap char pointers.
+    fn write_scanf_string(
+        &mut self,
+        s: &str,
+        arg: &AstNode,
+        location: SourceLocation,
+    ) -> Result<(), RuntimeError> {
+        // Write each character then the null terminator via arr[i] = c
+        for (i, c) in s.chars().enumerate() {
+            let index_node = AstNode::IntLiteral(i as i32, location);
+            let lvalue = AstNode::ArrayAccess {
+                array: Box::new(arg.clone()),
+                index: Box::new(index_node),
+                location,
+            };
+            self.assign_to_lvalue(&lvalue, Value::Char(c as i8), location)?;
+        }
+        // Null terminator
+        let null_index = AstNode::IntLiteral(s.len() as i32, location);
+        let null_lvalue = AstNode::ArrayAccess {
+            array: Box::new(arg.clone()),
+            index: Box::new(null_index),
+            location,
+        };
+        self.assign_to_lvalue(&null_lvalue, Value::Char(0), location)
     }
 
     pub(crate) fn builtin_malloc(

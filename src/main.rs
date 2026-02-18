@@ -108,8 +108,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Executing program...");
         match interpreter.run() {
             Ok(()) => {
-                eprintln!("Execution completed successfully.");
-                eprintln!("Total snapshots: {}", interpreter.total_snapshots());
+                if interpreter.is_paused_at_scanf() {
+                    eprintln!(
+                        "Execution paused at scanf (waiting for input in TUI). Snapshots so far: {}",
+                        interpreter.total_snapshots()
+                    );
+                } else {
+                    eprintln!("Execution completed successfully.");
+                    eprintln!("Total snapshots: {}", interpreter.total_snapshots());
+                }
             }
             Err(e) => {
                 eprintln!("Runtime error: {:?}", e);
