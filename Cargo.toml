@@ -1,6 +1,6 @@
 [package]
 name = "crustty"
-version = "0.2.1"
+version = "0.5.1"
 edition = "2021"
 authors = ["Sean Yang <sean@seanyang.me>"]
 description = "A time-travel C interpreter with memory visualization"
