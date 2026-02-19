@@ -51,7 +51,7 @@ Precompiled binaries for the following platforms will be available in the releas
 - macOS (x86_64 and ARM)
 - Linux (x86_64 and ARM)
 
-Download the appropriate binary for your platform, rename it to `crustty` (or `crustty.exe` on Windows), and add the directory containing the binary to your PATH.
+Download the appropriate binary (`.zip`) for your platform, extract it, and add the directory containing the binary to your PATH.
 
 ## Usage
 
