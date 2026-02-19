@@ -1,4 +1,3 @@
-#![allow(dead_code)] // Complete API module, not all methods currently used
 //! Heap implementation for the interpreter
 //!
 //! This module provides heap memory management with:
@@ -79,7 +78,11 @@ impl HeapBlock {
     }
 
     /// Write bytes to the block
-    pub fn write_bytes(&mut self, offset: usize, bytes: &[u8]) -> Result<(), String> {
+    pub fn write_bytes(
+        &mut self,
+        offset: usize,
+        bytes: &[u8],
+    ) -> Result<(), String> {
         if offset + bytes.len() > self.size {
             return Err(format!(
                 "Buffer overrun: attempted to write {} bytes at offset {} in block of size {}",
@@ -165,7 +168,10 @@ impl Heap {
     }
 
     /// Get a mutable heap block
-    pub fn get_block_mut(&mut self, addr: Address) -> Result<&mut HeapBlock, String> {
+    pub fn get_block_mut(
+        &mut self,
+        addr: Address,
+    ) -> Result<&mut HeapBlock, String> {
         match self.allocations.get_mut(&addr) {
             Some(block) if block.state == BlockState::Allocated => Ok(block),
             Some(_) => Err(format!(
@@ -180,7 +186,9 @@ impl Heap {
     }
 
     /// Get all allocations (for UI display, includes tombstones)
-    pub fn allocations(&self) -> &std::collections::HashMap<Address, HeapBlock> {
+    pub fn allocations(
+        &self,
+    ) -> &std::collections::HashMap<Address, HeapBlock> {
         &self.allocations
     }
 
@@ -195,7 +203,11 @@ impl Heap {
     }
 
     /// Write a single byte to an address
-    pub fn write_byte(&mut self, addr: Address, byte: u8) -> Result<(), String> {
+    pub fn write_byte(
+        &mut self,
+        addr: Address,
+        byte: u8,
+    ) -> Result<(), String> {
         // Find the block containing this address
         let mut target_block_addr = None;
         for (&block_addr, block) in &self.allocations {
@@ -248,7 +260,11 @@ impl Heap {
     }
 
     /// Write multiple bytes starting at an address
-    pub fn write_bytes_at(&mut self, addr: Address, bytes: &[u8]) -> Result<(), String> {
+    pub fn write_bytes_at(
+        &mut self,
+        addr: Address,
+        bytes: &[u8],
+    ) -> Result<(), String> {
         for (i, &byte) in bytes.iter().enumerate() {
             self.write_byte(addr + i as u64, byte)?;
         }
@@ -256,7 +272,11 @@ impl Heap {
     }
 
     /// Read multiple bytes starting at an address
-    pub fn read_bytes_at(&self, addr: Address, size: usize) -> Result<Vec<u8>, String> {
+    pub fn read_bytes_at(
+        &self,
+        addr: Address,
+        size: usize,
+    ) -> Result<Vec<u8>, String> {
         let mut bytes = Vec::with_capacity(size);
         for i in 0..size {
             bytes.push(self.read_byte(addr + i as u64)?);

@@ -1,8 +1,20 @@
+//! Binary operator evaluation for the interpreter.
+//!
+//! Adds `impl Interpreter` methods covering:
+//!
+//! - Checked arithmetic (`+`, `-`, `*`, `/`, `%`) with overflow detection
+//! - Pointer arithmetic (scale by pointee size)
+//! - Comparison operators (`==`, `!=`, `<`, `<=`, `>`, `>=`) across numeric and pointer types
+//! - Bitwise operators (`&`, `|`, `^`, `~`, `<<`, `>>`)
+//! - Compound-assignment operators (`+=`, `-=`, `*=`, `/=`, `%=`)
+//!
+//! All methods are `pub(crate)` — they are implementation details of the interpreter.
+
 use crate::interpreter::constants::HEAP_ADDRESS_START;
 use crate::interpreter::engine::Interpreter;
 use crate::interpreter::errors::RuntimeError;
 use crate::memory::{sizeof_type, value::Value};
-use crate::parser::ast::{BinOp, SourceLocation};
+use crate::parser::ast::{AstNode, BinOp, SourceLocation};
 
 impl Interpreter {
     /// Helper to coerce numeric types (Char, Int) to i32
@@ -16,25 +28,30 @@ impl Interpreter {
         }
     }
 
-    /// Helper to get the size of the type pointed to by a pointer
+    /// Returns the size in bytes of the type pointed to by `addr`.
+    ///
+    /// For stack pointers, the pointee type is looked up from the owning stack frame.
+    /// For heap pointers, the pointee type is looked up from `self.pointer_types`.
+    /// Used to scale integer offsets in pointer arithmetic expressions.
     pub(crate) fn get_pointer_scale(
         &self,
         addr: u64,
         location: SourceLocation,
     ) -> Result<u64, RuntimeError> {
         if addr < HEAP_ADDRESS_START {
-            let (_, frame_depth, var_name) = self.resolve_stack_pointer(addr, location)?;
+            let (_, frame_depth, var_name) =
+                self.resolve_stack_pointer(addr, location)?;
             // Logic to get variable without borrowing issues (resolve returns clones/indices)
             let frames = self.stack.frames();
             let frame = frames
                 .get(frame_depth)
                 .ok_or(RuntimeError::InvalidFrameDepth { location })?;
-            let var = frame
-                .get_var(&var_name)
-                .ok_or(RuntimeError::UndefinedVariable {
+            let var = frame.get_var(&var_name).ok_or(
+                RuntimeError::UndefinedVariable {
                     name: var_name,
                     location,
-                })?;
+                },
+            )?;
 
             if !var.var_type.array_dims.is_empty() {
                 let elem_type = var.var_type.element_type();
@@ -43,14 +60,13 @@ impl Interpreter {
                 Ok(sizeof_type(&var.var_type, &self.struct_defs) as u64)
             }
         } else {
-            let pointee = self
-                .pointer_types
-                .get(&addr)
-                .ok_or(RuntimeError::InvalidPointer {
+            let pointee = self.pointer_types.get(&addr).ok_or(
+                RuntimeError::InvalidPointer {
                     message: format!("Unknown type for pointer 0x{:x}", addr),
                     address: Some(addr),
                     location,
-                })?;
+                },
+            )?;
             Ok(sizeof_type(pointee, &self.struct_defs) as u64)
         }
     }
@@ -63,7 +79,9 @@ impl Interpreter {
         location: SourceLocation,
     ) -> Result<Value, RuntimeError> {
         // 1. Numeric addition (Int/Char + Int/Char)
-        if let (Some(a), Some(b)) = (self.coerce_to_int(left), self.coerce_to_int(right)) {
+        if let (Some(a), Some(b)) =
+            (self.coerce_to_int(left), self.coerce_to_int(right))
+        {
             return a
                 .checked_add(b)
                 .ok_or(RuntimeError::IntegerOverflow {
@@ -75,7 +93,8 @@ impl Interpreter {
 
         // 2. Pointer arithmetic
         match (left, right) {
-            (Value::Pointer(addr), right_val) | (right_val, Value::Pointer(addr)) => {
+            (Value::Pointer(addr), right_val)
+            | (right_val, Value::Pointer(addr)) => {
                 if let Some(offset) = self.coerce_to_int(right_val) {
                     let scale = self.get_pointer_scale(*addr, location)?;
                     let scaled_offset = offset as i64 * scale as i64;
@@ -96,6 +115,11 @@ impl Interpreter {
         }
     }
 
+    /// Subtracts `right` from `left` with overflow checking.
+    ///
+    /// Supports `int - int`, `pointer - int` (scaled), and `pointer - pointer`
+    /// (returning element-count difference). Returns [`RuntimeError::IntegerOverflow`]
+    /// on overflow, or [`RuntimeError::TypeError`] for unsupported type combinations.
     #[inline]
     pub(crate) fn checked_sub_values(
         &self,
@@ -104,7 +128,9 @@ impl Interpreter {
         location: SourceLocation,
     ) -> Result<Value, RuntimeError> {
         // 1. Numeric subtraction
-        if let (Some(a), Some(b)) = (self.coerce_to_int(left), self.coerce_to_int(right)) {
+        if let (Some(a), Some(b)) =
+            (self.coerce_to_int(left), self.coerce_to_int(right))
+        {
             return a
                 .checked_sub(b)
                 .ok_or(RuntimeError::IntegerOverflow {
@@ -145,6 +171,10 @@ impl Interpreter {
         }
     }
 
+    /// Multiplies `left` by `right` with overflow checking.
+    ///
+    /// Only numeric types (`int`, `char`) are supported; pointer multiplication is a
+    /// type error. Returns [`RuntimeError::IntegerOverflow`] on overflow.
     #[inline]
     pub(crate) fn checked_mul_values(
         &self,
@@ -152,7 +182,9 @@ impl Interpreter {
         right: &Value,
         location: SourceLocation,
     ) -> Result<Value, RuntimeError> {
-        if let (Some(a), Some(b)) = (self.coerce_to_int(left), self.coerce_to_int(right)) {
+        if let (Some(a), Some(b)) =
+            (self.coerce_to_int(left), self.coerce_to_int(right))
+        {
             return a
                 .checked_mul(b)
                 .ok_or(RuntimeError::IntegerOverflow {
@@ -169,6 +201,10 @@ impl Interpreter {
         })
     }
 
+    /// Divides `left` by `right` with divide-by-zero and overflow checking.
+    ///
+    /// Returns [`RuntimeError::DivisionError`] for division by zero, and
+    /// [`RuntimeError::IntegerOverflow`] for `i32::MIN / -1`.
     #[inline]
     pub(crate) fn checked_div_values(
         &self,
@@ -176,7 +212,9 @@ impl Interpreter {
         right: &Value,
         location: SourceLocation,
     ) -> Result<Value, RuntimeError> {
-        if let (Some(a), Some(b)) = (self.coerce_to_int(left), self.coerce_to_int(right)) {
+        if let (Some(a), Some(b)) =
+            (self.coerce_to_int(left), self.coerce_to_int(right))
+        {
             if b == 0 {
                 return Err(RuntimeError::DivisionError {
                     operation: "Division by zero".to_string(),
@@ -199,6 +237,9 @@ impl Interpreter {
         })
     }
 
+    /// Computes `left % right` with modulo-by-zero and overflow checking.
+    ///
+    /// Returns [`RuntimeError::DivisionError`] for modulo by zero.
     #[inline]
     pub(crate) fn checked_mod_values(
         &self,
@@ -206,7 +247,9 @@ impl Interpreter {
         right: &Value,
         location: SourceLocation,
     ) -> Result<Value, RuntimeError> {
-        if let (Some(a), Some(b)) = (self.coerce_to_int(left), self.coerce_to_int(right)) {
+        if let (Some(a), Some(b)) =
+            (self.coerce_to_int(left), self.coerce_to_int(right))
+        {
             if b == 0 {
                 return Err(RuntimeError::DivisionError {
                     operation: "Modulo by zero".to_string(),
@@ -229,6 +272,11 @@ impl Interpreter {
         })
     }
 
+    /// Compares `left` and `right` using the provided comparator closure `cmp`.
+    ///
+    /// Supports `int`/`char` (promoted to `i64`), `pointer`/`pointer`, and
+    /// `pointer`/`NULL` comparisons. Returns `Value::Int(1)` for true and
+    /// `Value::Int(0)` for false.
     #[inline]
     pub(crate) fn compare_values<F>(
         &self,
@@ -240,7 +288,9 @@ impl Interpreter {
     where
         F: Fn(i64, i64) -> bool,
     {
-        if let (Some(a), Some(b)) = (self.coerce_to_int(left), self.coerce_to_int(right)) {
+        if let (Some(a), Some(b)) =
+            (self.coerce_to_int(left), self.coerce_to_int(right))
+        {
             return Ok(Value::Int(if cmp(a as i64, b as i64) { 1 } else { 0 }));
         }
 
@@ -248,10 +298,13 @@ impl Interpreter {
             (Value::Pointer(a), Value::Pointer(b)) => {
                 Ok(Value::Int(if cmp(*a as i64, *b as i64) { 1 } else { 0 }))
             }
-            (Value::Pointer(a), Value::Null) | (Value::Null, Value::Pointer(a)) => {
+            (Value::Pointer(a), Value::Null)
+            | (Value::Null, Value::Pointer(a)) => {
                 Ok(Value::Int(if cmp(*a as i64, 0) { 1 } else { 0 }))
             }
-            (Value::Null, Value::Null) => Ok(Value::Int(if cmp(0, 0) { 1 } else { 0 })),
+            (Value::Null, Value::Null) => {
+                Ok(Value::Int(if cmp(0, 0) { 1 } else { 0 }))
+            }
             _ => Err(RuntimeError::TypeError {
                 expected: "comparable types".to_string(),
                 got: format!("{:?} vs {:?}", left, right),
@@ -260,6 +313,10 @@ impl Interpreter {
         }
     }
 
+    /// Applies a bitwise binary operator (`&`, `|`, `^`, `<<`, `>>`) to two numeric values.
+    ///
+    /// Both operands are coerced to `i32` before the operation. Returns
+    /// [`RuntimeError::TypeError`] if either operand is not numeric.
     #[inline]
     pub(crate) fn bitwise_op(
         &self,
@@ -268,7 +325,9 @@ impl Interpreter {
         op: &BinOp,
         location: SourceLocation,
     ) -> Result<Value, RuntimeError> {
-        if let (Some(a), Some(b)) = (self.coerce_to_int(left), self.coerce_to_int(right)) {
+        if let (Some(a), Some(b)) =
+            (self.coerce_to_int(left), self.coerce_to_int(right))
+        {
             let result = match op {
                 BinOp::BitAnd => a & b,
                 BinOp::BitOr => a | b,
@@ -287,11 +346,17 @@ impl Interpreter {
         })
     }
 
+    /// Dispatches a binary AST node to the appropriate operation helper.
+    ///
+    /// Compound-assignment operators (`+=`, `-=`, …) evaluate the right operand,
+    /// compute the result, and write it back through [`Self::assign_to_lvalue`].
+    /// All other operators evaluate both operands eagerly (short-circuit `&&`/`||`
+    /// are handled upstream in `evaluate_expr` and are not accepted here).
     pub(crate) fn evaluate_binary_op(
         &mut self,
         op: &BinOp,
-        left: &crate::parser::ast::AstNode,
-        right: &crate::parser::ast::AstNode,
+        left: &AstNode,
+        right: &AstNode,
         location: SourceLocation,
     ) -> Result<Value, RuntimeError> {
         use BinOp::*;
@@ -302,11 +367,16 @@ impl Interpreter {
                 let left_val = self.evaluate_expr(left)?;
 
                 let result = match op {
-                    AddAssign => self.checked_add_values(&left_val, &right_val, location)?,
-                    SubAssign => self.checked_sub_values(&left_val, &right_val, location)?,
-                    MulAssign => self.checked_mul_values(&left_val, &right_val, location)?,
-                    DivAssign => self.checked_div_values(&left_val, &right_val, location)?,
-                    ModAssign => self.checked_mod_values(&left_val, &right_val, location)?,
+                    AddAssign => self
+                        .checked_add_values(&left_val, &right_val, location)?,
+                    SubAssign => self
+                        .checked_sub_values(&left_val, &right_val, location)?,
+                    MulAssign => self
+                        .checked_mul_values(&left_val, &right_val, location)?,
+                    DivAssign => self
+                        .checked_div_values(&left_val, &right_val, location)?,
+                    ModAssign => self
+                        .checked_mod_values(&left_val, &right_val, location)?,
                     _ => unreachable!(),
                 };
 

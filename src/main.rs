@@ -1,4 +1,16 @@
-// CRusTTY: Time-Travel C Interpreter with Memory Visualization
+//! CRusTTY: Time-Travel C Interpreter with Memory Visualization
+//!
+//! Binary entry point. Parses CLI arguments, reads the source file (or the
+//! bundled `default` example), runs the interpreter to build the full snapshot
+//! history, then hands control to the ratatui-based TUI loop.
+//!
+//! # Execution sequence
+//!
+//! 1. Parse CLI arguments → source path or `"default"` keyword
+//! 2. Lex + parse source → `Program` AST (parse errors are surfaced in the TUI)
+//! 3. `Interpreter::run()` → executes fully, building snapshot history
+//! 4. `interpreter.rewind_to_start()` → reset cursor to snapshot 0
+//! 5. `App::run()` → ratatui event loop until the user quits
 
 use crustty::interpreter;
 use crustty::parser;
@@ -10,7 +22,10 @@ use std::path::Path;
 
 use crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
+        LeaveAlternateScreen,
+    },
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
@@ -27,7 +42,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get the first argument
     let arg = if args.len() < 2 {
         // If no arguments, check if we should run an example or show help
-        let program_name = args.first().map(|s| s.as_str()).unwrap_or("crustty");
+        let program_name =
+            args.first().map(|s| s.as_str()).unwrap_or("crustty");
         eprintln!("Error: No input file provided");
         eprintln!();
         eprintln!("Usage: {} <file.c> | <example>", program_name);
@@ -115,7 +131,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 } else {
                     eprintln!("Execution completed successfully.");
-                    eprintln!("Total snapshots: {}", interpreter.total_snapshots());
+                    eprintln!(
+                        "Total snapshots: {}",
+                        interpreter.total_snapshots()
+                    );
                 }
             }
             Err(e) => {

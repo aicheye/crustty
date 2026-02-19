@@ -33,7 +33,9 @@ impl Interpreter {
         location: SourceLocation,
     ) -> Result<(), RuntimeError> {
         match lvalue {
-            AstNode::Variable(name, _) => self.assign_to_variable(name, value, location),
+            AstNode::Variable(name, _) => {
+                self.assign_to_variable(name, value, location)
+            }
 
             AstNode::MemberAccess {
                 object,
@@ -45,7 +47,9 @@ impl Interpreter {
                 object,
                 member,
                 location: _,
-            } => self.assign_to_pointer_member_access(object, member, value, location),
+            } => self.assign_to_pointer_member_access(
+                object, member, value, location,
+            ),
 
             AstNode::UnaryOp {
                 op: UnOp::Deref,
@@ -81,12 +85,12 @@ impl Interpreter {
             .current_frame_mut()
             .ok_or(RuntimeError::NoStackFrame { location })?;
 
-        let var = frame
-            .get_var_mut(name)
-            .ok_or_else(|| RuntimeError::UndefinedVariable {
+        let var = frame.get_var_mut(name).ok_or_else(|| {
+            RuntimeError::UndefinedVariable {
                 name: name.to_string(),
                 location,
-            })?;
+            }
+        })?;
 
         // Check if const
         if var.is_const {
@@ -143,9 +147,13 @@ impl Interpreter {
         match ptr_val {
             Value::Pointer(addr) => {
                 if addr < HEAP_ADDRESS_START {
-                    self.assign_to_stack_pointer_member(addr, member, value, location)
+                    self.assign_to_stack_pointer_member(
+                        addr, member, value, location,
+                    )
                 } else {
-                    self.assign_to_heap_pointer_member(addr, member, value, location)
+                    self.assign_to_heap_pointer_member(
+                        addr, member, value, location,
+                    )
                 }
             }
             Value::Null => Err(RuntimeError::NullDereference { location }),
@@ -165,7 +173,8 @@ impl Interpreter {
         location: SourceLocation,
     ) -> Result<(), RuntimeError> {
         // Stack address
-        let (base_addr, frame_depth, var_name) = self.resolve_stack_pointer(addr, location)?;
+        let (base_addr, frame_depth, var_name) =
+            self.resolve_stack_pointer(addr, location)?;
 
         // Get mutable access to the frame
         // This is tricky with Rust's borrow checker
@@ -181,12 +190,12 @@ impl Interpreter {
             .frame_mut(frame_depth)
             .ok_or(RuntimeError::InvalidFrameDepth { location })?;
 
-        let var = frame
-            .get_var_mut(&var_name)
-            .ok_or_else(|| RuntimeError::UndefinedVariable {
+        let var = frame.get_var_mut(&var_name).ok_or_else(|| {
+            RuntimeError::UndefinedVariable {
                 name: var_name.clone(),
                 location,
-            })?;
+            }
+        })?;
 
         match &mut var.value {
             Value::Struct(fields) => {
@@ -196,7 +205,8 @@ impl Interpreter {
             Value::Array(elements) => {
                 let offset = addr - base_addr;
                 let elem_type = var.var_type.element_type();
-                let elem_size = sizeof_type(&elem_type, &self.struct_defs) as u64;
+                let elem_size =
+                    sizeof_type(&elem_type, &self.struct_defs) as u64;
                 let idx = if elem_size > 0 { offset / elem_size } else { 0 };
 
                 if idx as usize >= elements.len() {
@@ -262,13 +272,19 @@ impl Interpreter {
         };
 
         // Calculate field offset
-        let offset = self.calculate_field_offset(&struct_name, member, location)?;
+        let offset =
+            self.calculate_field_offset(&struct_name, member, location)?;
 
         // Get field type
         let field_type = self.get_field_type(&struct_name, member, location)?;
 
         // Serialize field value to heap
-        self.serialize_value_to_heap(&value, &field_type, addr + offset as u64, location)?;
+        self.serialize_value_to_heap(
+            &value,
+            &field_type,
+            addr + offset as u64,
+            location,
+        )?;
         Ok(())
     }
 
@@ -292,7 +308,9 @@ impl Interpreter {
                     // Get mutable access to the frame
                     let frames_len = self.stack.frames().len();
                     if frame_depth >= frames_len {
-                        return Err(RuntimeError::InvalidFrameDepth { location });
+                        return Err(RuntimeError::InvalidFrameDepth {
+                            location,
+                        });
                     }
 
                     let frame = self
@@ -300,20 +318,27 @@ impl Interpreter {
                         .frame_mut(frame_depth)
                         .ok_or(RuntimeError::InvalidFrameDepth { location })?;
 
-                    let var = frame.get_var_mut(&var_name).ok_or_else(|| {
-                        RuntimeError::UndefinedVariable {
-                            name: var_name.clone(),
-                            location,
-                        }
-                    })?;
+                    let var =
+                        frame.get_var_mut(&var_name).ok_or_else(|| {
+                            RuntimeError::UndefinedVariable {
+                                name: var_name.clone(),
+                                location,
+                            }
+                        })?;
 
                     // Update the variable's value handling array indexing
                     match &mut var.value {
                         Value::Array(elements) => {
                             let offset = addr - base_addr;
                             let elem_type = var.var_type.element_type();
-                            let elem_size = sizeof_type(&elem_type, &self.struct_defs) as u64;
-                            let idx = if elem_size > 0 { offset / elem_size } else { 0 };
+                            let elem_size =
+                                sizeof_type(&elem_type, &self.struct_defs)
+                                    as u64;
+                            let idx = if elem_size > 0 {
+                                offset / elem_size
+                            } else {
+                                0
+                            };
 
                             if idx as usize >= elements.len() {
                                 return Err(RuntimeError::BufferOverrun {
@@ -323,11 +348,13 @@ impl Interpreter {
                                 });
                             }
                             elements[idx as usize] = value;
-                            var.init_state = crate::memory::stack::InitState::Initialized;
+                            var.init_state =
+                                crate::memory::stack::InitState::Initialized;
                         }
                         _ => {
                             var.value = value;
-                            var.init_state = crate::memory::stack::InitState::Initialized;
+                            var.init_state =
+                                crate::memory::stack::InitState::Initialized;
                         }
                     }
                     Ok(())
@@ -439,7 +466,9 @@ impl Interpreter {
 
                     let frames_len = self.stack.frames().len();
                     if frame_depth >= frames_len {
-                        return Err(RuntimeError::InvalidFrameDepth { location });
+                        return Err(RuntimeError::InvalidFrameDepth {
+                            location,
+                        });
                     }
 
                     let frame = self
@@ -447,24 +476,33 @@ impl Interpreter {
                         .frame_mut(frame_depth)
                         .ok_or(RuntimeError::InvalidFrameDepth { location })?;
 
-                    let var = frame.get_var_mut(&var_name).ok_or_else(|| {
-                        RuntimeError::UndefinedVariable {
-                            name: var_name.clone(),
-                            location,
-                        }
-                    })?;
+                    let var =
+                        frame.get_var_mut(&var_name).ok_or_else(|| {
+                            RuntimeError::UndefinedVariable {
+                                name: var_name.clone(),
+                                location,
+                            }
+                        })?;
 
                     // Handle array indexing for stack arrays
                     match &mut var.value {
                         Value::Array(elements) => {
                             let offset = addr - base_addr;
                             let elem_type = var.var_type.element_type();
-                            let elem_size = sizeof_type(&elem_type, &self.struct_defs) as u64;
-                            let start_index = if elem_size > 0 { offset / elem_size } else { 0 };
+                            let elem_size =
+                                sizeof_type(&elem_type, &self.struct_defs)
+                                    as u64;
+                            let start_index = if elem_size > 0 {
+                                offset / elem_size
+                            } else {
+                                0
+                            };
 
                             let final_idx = (start_index as i64) + (idx as i64);
 
-                            if final_idx < 0 || final_idx as usize >= elements.len() {
+                            if final_idx < 0
+                                || final_idx as usize >= elements.len()
+                            {
                                 return Err(RuntimeError::BufferOverrun {
                                     index: final_idx as usize,
                                     size: elements.len(),
@@ -474,7 +512,8 @@ impl Interpreter {
                             elements[final_idx as usize] = value;
                             // Mark as initialized if this was the variable's first write
                             // Note: granular array tracking is pending in Todo 4
-                            var.init_state = crate::memory::stack::InitState::Initialized;
+                            var.init_state =
+                                crate::memory::stack::InitState::Initialized;
                         }
                         _ => {
                             // Not an array - only allow index 0
@@ -495,8 +534,11 @@ impl Interpreter {
                     }
                 } else {
                     // Heap pointer assignment
-                    if let Some(elem_type) = self.pointer_types.get(&addr).cloned() {
-                        let elem_size = sizeof_type(&elem_type, &self.struct_defs);
+                    if let Some(elem_type) =
+                        self.pointer_types.get(&addr).cloned()
+                    {
+                        let elem_size =
+                            sizeof_type(&elem_type, &self.struct_defs);
                         let offset = (idx as i64) * (elem_size as i64);
                         let target_addr = if offset >= 0 {
                             addr + (offset as u64)
@@ -504,10 +546,18 @@ impl Interpreter {
                             addr - ((-offset) as u64)
                         };
 
-                        self.serialize_value_to_heap(&value, &elem_type, target_addr, location)?;
+                        self.serialize_value_to_heap(
+                            &value,
+                            &elem_type,
+                            target_addr,
+                            location,
+                        )?;
                     } else {
                         return Err(RuntimeError::InvalidPointer {
-                            message: format!("Unknown pointer type for indexing at 0x{:x}", addr),
+                            message: format!(
+                                "Unknown pointer type for indexing at 0x{:x}",
+                                addr
+                            ),
                             address: Some(addr),
                             location,
                         });

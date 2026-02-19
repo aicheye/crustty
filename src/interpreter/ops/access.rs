@@ -22,14 +22,13 @@ impl Interpreter {
                     _ => "unknown".to_string(),
                 };
 
-                fields
-                    .get(member)
-                    .cloned()
-                    .ok_or_else(|| RuntimeError::MissingStructField {
+                fields.get(member).cloned().ok_or_else(|| {
+                    RuntimeError::MissingStructField {
                         struct_name,
                         field_name: member.to_string(),
                         location,
-                    })
+                    }
+                })
             }
             _ => Err(RuntimeError::TypeError {
                 expected: "struct".to_string(),
@@ -53,11 +52,10 @@ impl Interpreter {
                     let (_base_addr, frame_depth, var_name) =
                         self.resolve_stack_pointer(addr, location)?;
 
-                    let frame = self
-                        .stack
-                        .frames()
-                        .get(frame_depth)
-                        .ok_or(RuntimeError::InvalidFrameDepth { location })?;
+                    let frame =
+                        self.stack.frames().get(frame_depth).ok_or(
+                            RuntimeError::InvalidFrameDepth { location },
+                        )?;
 
                     let var = frame.get_var(&var_name).ok_or_else(|| {
                         RuntimeError::UndefinedVariable {
@@ -107,10 +105,19 @@ impl Interpreter {
                         }
                     };
 
-                    let offset = self.calculate_field_offset(&struct_name, member, location)?;
-                    let field_type = self.get_field_type(&struct_name, member, location)?;
+                    let offset = self.calculate_field_offset(
+                        &struct_name,
+                        member,
+                        location,
+                    )?;
+                    let field_type =
+                        self.get_field_type(&struct_name, member, location)?;
 
-                    self.deserialize_value_from_heap(&field_type, addr + offset as u64, location)
+                    self.deserialize_value_from_heap(
+                        &field_type,
+                        addr + offset as u64,
+                        location,
+                    )
                 }
             }
             Value::Null => Err(RuntimeError::NullDereference { location }),
@@ -162,11 +169,10 @@ impl Interpreter {
                     let (base_addr, frame_depth, var_name) =
                         self.resolve_stack_pointer(addr, location)?;
 
-                    let frame = self
-                        .stack
-                        .frames()
-                        .get(frame_depth)
-                        .ok_or(RuntimeError::InvalidFrameDepth { location })?;
+                    let frame =
+                        self.stack.frames().get(frame_depth).ok_or(
+                            RuntimeError::InvalidFrameDepth { location },
+                        )?;
 
                     let var = frame.get_var(&var_name).ok_or_else(|| {
                         RuntimeError::UndefinedVariable {
@@ -182,12 +188,20 @@ impl Interpreter {
 
                             // Calculate element size to determine start index
                             let elem_type = var.var_type.element_type();
-                            let elem_size = sizeof_type(&elem_type, &self.struct_defs) as u64;
-                            let start_index = if elem_size > 0 { offset / elem_size } else { 0 };
+                            let elem_size =
+                                sizeof_type(&elem_type, &self.struct_defs)
+                                    as u64;
+                            let start_index = if elem_size > 0 {
+                                offset / elem_size
+                            } else {
+                                0
+                            };
 
                             let final_idx = (start_index as i64) + (idx as i64);
 
-                            if final_idx < 0 || final_idx as usize >= elements.len() {
+                            if final_idx < 0
+                                || final_idx as usize >= elements.len()
+                            {
                                 return Err(RuntimeError::BufferOverrun {
                                     index: final_idx as usize,
                                     size: elements.len(),
@@ -211,7 +225,9 @@ impl Interpreter {
                             }
                         }
                     }
-                } else if let Some(elem_type) = self.pointer_types.get(&addr).cloned() {
+                } else if let Some(elem_type) =
+                    self.pointer_types.get(&addr).cloned()
+                {
                     let elem_size = sizeof_type(&elem_type, &self.struct_defs);
 
                     let offset = (idx as i64) * (elem_size as i64);
@@ -221,10 +237,17 @@ impl Interpreter {
                         addr - ((-offset) as u64)
                     };
 
-                    self.deserialize_value_from_heap(&elem_type, target_addr, location)
+                    self.deserialize_value_from_heap(
+                        &elem_type,
+                        target_addr,
+                        location,
+                    )
                 } else {
                     Err(RuntimeError::InvalidPointer {
-                        message: format!("Unknown pointer type for indexing at 0x{:x}", addr),
+                        message: format!(
+                            "Unknown pointer type for indexing at 0x{:x}",
+                            addr
+                        ),
                         address: Some(addr),
                         location,
                     })

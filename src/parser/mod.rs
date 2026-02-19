@@ -3,9 +3,9 @@
 //! This module transforms C source text into an Abstract Syntax Tree (AST):
 //! - [`lexer`][]: Tokenization (source text → tokens)
 //! - [`parse`][]: Main parser coordinator (tokens → AST)
-//! - [`declarations`][]: Declaration parsing (structs, functions, types)
-//! - [`statements`][]: Statement parsing (if, while, for, switch, etc.)
-//! - [`expressions`][]: Expression parsing (operators, precedence)
+//! - `declarations`: Declaration parsing (structs, functions, types)
+//! - `statements`: Statement parsing (if, while, for, switch, etc.)
+//! - `expressions`: Expression parsing (operators, precedence)
 //! - [`ast`][]: AST node definitions
 //!
 //! # Supported C Subset

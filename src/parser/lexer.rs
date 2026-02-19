@@ -1,7 +1,16 @@
+//! Lexer (tokenizer) for C source code
+//!
+//! Converts raw source text into a flat [`Token`] stream consumed by the parser.
+//! `#include` and other preprocessor directives are silently skipped rather than
+//! parsed, matching the interpreter's no-preprocessor policy.
+
 use super::ast::SourceLocation;
 use std::fmt;
 
-/// Token types for the C subset
+/// All token variants produced by the lexer.
+///
+/// Every variant carries a [`SourceLocation`] so that parse errors can report
+/// an accurate line and column without a separate token→location table.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Literals
@@ -97,6 +106,7 @@ pub enum Token {
 }
 
 impl Token {
+    /// Returns the source location where this token appears.
     pub fn location(&self) -> SourceLocation {
         match self {
             Token::IntLiteral(_, loc)
@@ -273,6 +283,7 @@ pub struct Lexer {
 }
 
 impl Lexer {
+    /// Create a new lexer for the given source string.
     pub fn new(input: &str) -> Self {
         Self {
             input: input.chars().collect(),
@@ -466,7 +477,8 @@ impl Lexer {
             if ch == '\\' {
                 self.advance();
                 let escaped = self.advance().ok_or_else(|| LexError {
-                    message: "Unexpected end of file in string literal".to_string(),
+                    message: "Unexpected end of file in string literal"
+                        .to_string(),
                     location: self.current_location(),
                 })?;
 
@@ -479,7 +491,10 @@ impl Lexer {
                     '0' => '\0',
                     _ => {
                         return Err(LexError {
-                            message: format!("Unknown escape sequence: \\{}", escaped),
+                            message: format!(
+                                "Unknown escape sequence: \\{}",
+                                escaped
+                            ),
                             location: self.current_location(),
                         });
                     }
@@ -509,7 +524,8 @@ impl Lexer {
         let value = if ch == '\\' {
             // Handle escape sequences
             let escaped = self.advance().ok_or_else(|| LexError {
-                message: "Unexpected end of file in character literal".to_string(),
+                message: "Unexpected end of file in character literal"
+                    .to_string(),
                 location: self.current_location(),
             })?;
 
@@ -532,16 +548,22 @@ impl Lexer {
                     })?;
 
                     let hex_str = format!("{}{}", hex1, hex2);
-                    u8::from_str_radix(&hex_str, 16)
-                        .map(|v| v as i8)
-                        .map_err(|_| LexError {
-                            message: format!("Invalid hex escape sequence: \\x{}", hex_str),
+                    u8::from_str_radix(&hex_str, 16).map(|v| v as i8).map_err(
+                        |_| LexError {
+                            message: format!(
+                                "Invalid hex escape sequence: \\x{}",
+                                hex_str
+                            ),
                             location: self.current_location(),
-                        })?
+                        },
+                    )?
                 }
                 _ => {
                     return Err(LexError {
-                        message: format!("Unknown escape sequence: \\{}", escaped),
+                        message: format!(
+                            "Unknown escape sequence: \\{}",
+                            escaped
+                        ),
                         location: self.current_location(),
                     });
                 }
@@ -553,7 +575,8 @@ impl Lexer {
         // Expect closing quote
         if self.advance() != Some('\'') {
             return Err(LexError {
-                message: "Expected closing quote in character literal".to_string(),
+                message: "Expected closing quote in character literal"
+                    .to_string(),
                 location: self.current_location(),
             });
         }
@@ -585,7 +608,10 @@ impl Lexer {
     }
 
     /// Parse identifier or keyword
-    fn identifier_or_keyword(&mut self, first_char: char) -> Result<Token, LexError> {
+    fn identifier_or_keyword(
+        &mut self,
+        first_char: char,
+    ) -> Result<Token, LexError> {
         let loc = SourceLocation::new(self.line, self.column - 1);
         let mut ident = String::new();
         ident.push(first_char);
@@ -779,7 +805,8 @@ mod tests {
 
     #[test]
     fn test_comments() {
-        let mut lexer = Lexer::new("int x; // comment\nint y; /* block\ncomment */ int z;");
+        let mut lexer =
+            Lexer::new("int x; // comment\nint y; /* block\ncomment */ int z;");
         let tokens = lexer.tokenize().unwrap();
 
         // Should skip comments

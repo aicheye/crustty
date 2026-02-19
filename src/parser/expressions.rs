@@ -461,7 +461,8 @@ impl Parser {
                     n
                 } else {
                     return Err(ParseError {
-                        message: "Function call must be on identifier".to_string(),
+                        message: "Function call must be on identifier"
+                            .to_string(),
                         location: loc,
                     });
                 };

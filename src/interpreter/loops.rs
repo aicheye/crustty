@@ -1,14 +1,34 @@
+//! Loop statement execution (`while`, `do-while`, `for`).
+//!
+//! Adds `impl Interpreter` methods for the three loop forms supported by the
+//! C subset. `break` and `continue` are propagated via `LoopBodyResult` so
+//! the loop driver can react without inspecting `control_flow` directly.
+//!
+//! `goto` and `return` inside a loop body are handled by returning
+//! `LoopBodyResult::Exit`, which causes the loop to unwind immediately and
+//! let the outer execution context propagate the control-flow signal.
+
 use crate::interpreter::engine::{ControlFlow, Interpreter};
 use crate::interpreter::errors::RuntimeError;
 use crate::parser::ast::{AstNode, SourceLocation};
 
+/// Result returned by [`Interpreter::execute_loop_body`] to signal how the body ended.
 pub(crate) enum LoopBodyResult {
+    /// Body completed normally or via `continue` — the loop should iterate again.
     Continue,
+    /// `break` was encountered — the loop should exit cleanly.
     Break,
+    /// `return`, `goto`, or another non-loop control flow was triggered —
+    /// the loop driver should unwind and propagate `self.control_flow` to the caller.
     Exit,
 }
 
 impl Interpreter {
+    /// Executes all statements in `body` inside a fresh scope.
+    ///
+    /// Returns [`LoopBodyResult::Continue`] if the body ran to completion or hit
+    /// `continue`, [`LoopBodyResult::Break`] on `break`, and
+    /// [`LoopBodyResult::Exit`] for any other control-flow signal (`return`, `goto`).
     pub(crate) fn execute_loop_body(
         &mut self,
         body: &[AstNode],
@@ -40,6 +60,11 @@ impl Interpreter {
         Ok(LoopBodyResult::Continue)
     }
 
+    /// Executes a `while (condition) { body }` loop.
+    ///
+    /// The condition is evaluated before each iteration. A snapshot is taken at
+    /// `location` both when the condition is true (before executing the body) and
+    /// when it first becomes false (loop exit point).
     pub(crate) fn execute_while(
         &mut self,
         condition: &AstNode,
@@ -72,6 +97,10 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Executes a `do { body } while (condition)` loop.
+    ///
+    /// The body always runs at least once; the condition is checked after each
+    /// iteration.
     pub(crate) fn execute_do_while(
         &mut self,
         body: &[AstNode],
@@ -104,6 +133,11 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Executes a `for (init; condition; increment) { body }` loop.
+    ///
+    /// `init`, `condition`, and `increment` are all optional, matching C semantics.
+    /// A missing condition is treated as always-true. The initializer and loop
+    /// variable share a single scope that is exited when the loop ends.
     pub(crate) fn execute_for(
         &mut self,
         init: Option<&AstNode>,

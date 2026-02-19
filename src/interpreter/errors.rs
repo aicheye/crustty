@@ -1,9 +1,16 @@
 //! Runtime error types for the C interpreter
 //!
-//! This module defines [`RuntimeError`], which represents all errors that can occur
-//! during program execution (as opposed to parse errors or system errors).
+//! This module defines [`RuntimeError`], which represents errors and internal execution
+//! signals that can occur during program execution (as opposed to parse errors or system errors).
 //!
-//! All runtime errors are fatal - they halt execution and display diagnostic information.
+//! # Fatal vs signal variants
+//!
+//! Most variants are fatal — they halt execution and surface a diagnostic to the user.
+//! One variant, [`RuntimeError::ScanfNeedsInput`], is an **internal control-flow signal**
+//! used to propagate a "pause-and-wait-for-input" condition up the call stack. It is caught
+//! exclusively in [`crate::interpreter::engine::Interpreter::run`] and is never stored as a
+//! persistent error or displayed to the user. Use [`RuntimeError::is_execution_signal`] to
+//! distinguish signals from fatal errors.
 
 use crate::parser::ast::SourceLocation;
 use std::fmt;
@@ -159,11 +166,32 @@ pub enum RuntimeError {
         location: SourceLocation,
     },
 
-    /// Execution is paused waiting for scanf input (internal signal, not a real error)
+    /// Internal execution signal: pauses the interpreter to request stdin input.
+    ///
+    /// **Not a real error.** This variant is returned by `builtin_scanf` when the
+    /// stdin token queue is exhausted, then propagated up through the call stack and
+    /// caught exclusively in [`crate::interpreter::engine::Interpreter::run`].
+    /// It is never stored as `last_runtime_error` and never displayed to the user.
+    ///
+    /// Use [`RuntimeError::is_execution_signal`] to test for this at catch sites.
+    #[doc(hidden)]
     ScanfNeedsInput { location: SourceLocation },
 }
 
 impl RuntimeError {
+    /// Returns `true` if this is an internal execution signal rather than a fatal error.
+    ///
+    /// Currently the only signal is [`RuntimeError::ScanfNeedsInput`]. Code that
+    /// dispatches on `RuntimeError` should handle signals before handling fatal errors.
+    #[inline]
+    pub fn is_execution_signal(&self) -> bool {
+        matches!(self, RuntimeError::ScanfNeedsInput { .. })
+    }
+
+    /// Returns the source location associated with this error, if any.
+    ///
+    /// Variants that describe program-wide conditions (e.g. `NoMainFunction`,
+    /// `OutOfMemory`) have no associated location and return `None`.
     pub fn location(&self) -> Option<&SourceLocation> {
         match self {
             RuntimeError::UninitializedRead { location, .. } => Some(location),
@@ -177,19 +205,29 @@ impl RuntimeError {
             RuntimeError::UndefinedFunction { location, .. } => Some(location),
             RuntimeError::UndefinedVariable { location, .. } => Some(location),
             RuntimeError::TypeError { location, .. } => Some(location),
-            RuntimeError::InvalidPrintfFormat { location, .. } => Some(location),
+            RuntimeError::InvalidPrintfFormat { location, .. } => {
+                Some(location)
+            }
             RuntimeError::NoStackFrame { location } => Some(location),
             RuntimeError::DivisionError { location, .. } => Some(location),
-            RuntimeError::ArgumentCountMismatch { location, .. } => Some(location),
+            RuntimeError::ArgumentCountMismatch { location, .. } => {
+                Some(location)
+            }
             RuntimeError::InvalidPointer { location, .. } => Some(location),
             RuntimeError::InvalidFrameDepth { location } => Some(location),
             RuntimeError::MissingStructField { location, .. } => Some(location),
             RuntimeError::StructNotDefined { location, .. } => Some(location),
-            RuntimeError::UnsupportedOperation { location, .. } => Some(location),
-            RuntimeError::InvalidMemoryOperation { location, .. } => Some(location),
+            RuntimeError::UnsupportedOperation { location, .. } => {
+                Some(location)
+            }
+            RuntimeError::InvalidMemoryOperation { location, .. } => {
+                Some(location)
+            }
             RuntimeError::InvalidString { location, .. } => Some(location),
             RuntimeError::InvalidMallocSize { location, .. } => Some(location),
-            RuntimeError::HistoryOperationFailed { location, .. } => Some(location),
+            RuntimeError::HistoryOperationFailed { location, .. } => {
+                Some(location)
+            }
             RuntimeError::ScanfNeedsInput { location } => Some(location),
             RuntimeError::OutOfMemory { .. } => None,
             RuntimeError::SnapshotLimitExceeded { .. } => None,
@@ -275,10 +313,18 @@ impl fmt::Display for RuntimeError {
                 )
             }
             RuntimeError::UndefinedFunction { name, location } => {
-                write!(f, "Undefined function '{}' at line {}", name, location.line)
+                write!(
+                    f,
+                    "Undefined function '{}' at line {}",
+                    name, location.line
+                )
             }
             RuntimeError::UndefinedVariable { name, location } => {
-                write!(f, "Undefined variable '{}' at line {}", name, location.line)
+                write!(
+                    f,
+                    "Undefined variable '{}' at line {}",
+                    name, location.line
+                )
             }
             RuntimeError::TypeError {
                 expected,
@@ -338,7 +384,11 @@ impl fmt::Display for RuntimeError {
                         addr, message, location.line
                     )
                 } else {
-                    write!(f, "Invalid pointer: {} at line {}", message, location.line)
+                    write!(
+                        f,
+                        "Invalid pointer: {} at line {}",
+                        message, location.line
+                    )
                 }
             }
             RuntimeError::InvalidFrameDepth { location } => {
@@ -377,7 +427,11 @@ impl fmt::Display for RuntimeError {
                 )
             }
             RuntimeError::InvalidString { message, location } => {
-                write!(f, "Invalid string: {} at line {}", message, location.line)
+                write!(
+                    f,
+                    "Invalid string: {} at line {}",
+                    message, location.line
+                )
             }
             RuntimeError::InvalidMallocSize { size, location } => {
                 write!(

@@ -23,27 +23,21 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact_name: crustty-linux-x64
             asset_name: crustty-linux-x64
             binary_name: crustty
           - os: ubuntu-24.04-arm
-            artifact_name: crustty-linux-arm
             asset_name: crustty-linux-arm
             binary_name: crustty
           - os: windows-latest
-            artifact_name: crustty-windows-x64.exe
             asset_name: crustty-windows-x64
             binary_name: crustty.exe
           - os: windows-11-arm
-            artifact_name: crustty-windows-arm.exe
             asset_name: crustty-windows-arm
             binary_name: crustty.exe
           - os: macos-latest
-            artifact_name: crustty-macos-arm
             asset_name: crustty-macos-arm
             binary_name: crustty
           - os: macos-15-intel
-            artifact_name: crustty-macos-x64
             asset_name: crustty-macos-x64
             binary_name: crustty
 
@@ -53,14 +47,23 @@ jobs:
     - uses: actions/checkout@v4
     - name: Build
       run: cargo build --release --verbose
-    - name: Rename binary
+    - name: Archive binary (Windows)
+      if: startsWith(matrix.os, 'windows')
       shell: bash
-      run: mv target/release/${{ matrix.binary_name }} target/release/${{ matrix.artifact_name }}
+      run: |
+        cd target/release
+        7z a ${{ matrix.asset_name }}.zip ${{ matrix.binary_name }}
+    - name: Archive binary (Unix)
+      if: contains(matrix.os, 'windows') == false
+      shell: bash
+      run: |
+        cd target/release
+        zip ${{ matrix.asset_name }}.zip ${{ matrix.binary_name }}
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.asset_name }}
-        path: target/release/${{ matrix.artifact_name }}
+        path: target/release/${{ matrix.asset_name }}.zip
 
   release:
     needs: build

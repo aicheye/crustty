@@ -1,4 +1,3 @@
-#![allow(dead_code)] // Complete API module, not all methods currently used
 //! Call stack implementation
 //!
 //! This module provides the call stack for function execution:
@@ -43,7 +42,10 @@ impl InitState {
     }
 
     /// Mark a field as initialized (for structs)
-    pub fn mark_field_initialized(&mut self, field: &str) -> Result<(), String> {
+    pub fn mark_field_initialized(
+        &mut self,
+        field: &str,
+    ) -> Result<(), String> {
         match self {
             InitState::PartiallyInitialized(map) => {
                 if let Some(state) = map.get_mut(field) {
@@ -101,7 +103,7 @@ pub struct StackFrame {
     pub function_name: String,
     pub locals: HashMap<String, LocalVar>,
     pub return_location: Option<SourceLocation>, // Where to return to
-    pub insertion_order: Vec<String>,            // Track order of variable declarations
+    pub insertion_order: Vec<String>, // Track order of variable declarations
     scope_stack: Vec<ScopeData>,
 }
 
@@ -112,7 +114,10 @@ struct ScopeData {
 }
 
 impl StackFrame {
-    pub fn new(function_name: String, return_location: Option<SourceLocation>) -> Self {
+    pub fn new(
+        function_name: String,
+        return_location: Option<SourceLocation>,
+    ) -> Self {
         StackFrame {
             function_name,
             locals: HashMap::new(),
@@ -136,7 +141,9 @@ impl StackFrame {
             // Remove variables declared in this scope
             for name in scope.declared {
                 self.locals.remove(&name);
-                if let Some(pos) = self.insertion_order.iter().rposition(|x| x == &name) {
+                if let Some(pos) =
+                    self.insertion_order.iter().rposition(|x| x == &name)
+                {
                     self.insertion_order.remove(pos);
                 }
             }
@@ -201,7 +208,11 @@ impl Stack {
     }
 
     /// Push a new stack frame
-    pub fn push_frame(&mut self, function_name: String, return_location: Option<SourceLocation>) {
+    pub fn push_frame(
+        &mut self,
+        function_name: String,
+        return_location: Option<SourceLocation>,
+    ) {
         self.frames
             .push(StackFrame::new(function_name, return_location));
     }

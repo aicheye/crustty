@@ -1,0 +1,12 @@
+# Markdownlint configuration for CRusTTY
+# See https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+# MD013: Line length - disable as it conflicts with other conventions
+MD013: false
+
+# MD033: Allow inline HTML (useful for complex formatting)
+MD033: false
+
+# MD041: First line in file should be a top-level heading
+# Set to false to allow front matter or other content before heading
+MD041: false
