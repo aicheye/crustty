@@ -164,10 +164,7 @@ impl Parser {
     fn parse_if_statement(&mut self) -> Result<AstNode, ParseError> {
         let loc = self.previous_location();
 
-        self.expect_token(
-            &Token::LParen(self.current_location()),
-            "Expected '(' after 'if'",
-        )?;
+        self.expect_lparen("after 'if'")?;
         let condition = Box::new(self.parse_expression()?);
         self.expect_token(
             &Token::RParen(self.current_location()),
@@ -194,10 +191,7 @@ impl Parser {
     fn parse_while_statement(&mut self) -> Result<AstNode, ParseError> {
         let loc = self.previous_location();
 
-        self.expect_token(
-            &Token::LParen(self.current_location()),
-            "Expected '(' after 'while'",
-        )?;
+        self.expect_lparen("after 'while'")?;
         let condition = Box::new(self.parse_expression()?);
         self.expect_token(
             &Token::RParen(self.current_location()),
@@ -223,10 +217,7 @@ impl Parser {
             &Token::While(self.current_location()),
             "Expected 'while' after do body",
         )?;
-        self.expect_token(
-            &Token::LParen(self.current_location()),
-            "Expected '(' after 'while'",
-        )?;
+        self.expect_lparen("after 'while'")?;
         let condition = Box::new(self.parse_expression()?);
         self.expect_token(
             &Token::RParen(self.current_location()),
@@ -248,10 +239,7 @@ impl Parser {
     fn parse_for_statement(&mut self) -> Result<AstNode, ParseError> {
         let loc = self.previous_location();
 
-        self.expect_token(
-            &Token::LParen(self.current_location()),
-            "Expected '(' after 'for'",
-        )?;
+        self.expect_lparen("after 'for'")?;
 
         // Init (optional)
         let init = if self.check(&Token::Semicolon(self.current_location())) {
@@ -310,10 +298,7 @@ impl Parser {
     fn parse_switch_statement(&mut self) -> Result<AstNode, ParseError> {
         let loc = self.previous_location();
 
-        self.expect_token(
-            &Token::LParen(self.current_location()),
-            "Expected '(' after 'switch'",
-        )?;
+        self.expect_lparen("after 'switch'")?;
         let expr = Box::new(self.parse_expression()?);
         self.expect_token(
             &Token::RParen(self.current_location()),
@@ -335,14 +320,7 @@ impl Parser {
                     "Expected ':' after case value",
                 )?;
 
-                let mut statements = Vec::new();
-                while !self.check(&Token::Case(self.current_location()))
-                    && !self.check(&Token::Default(self.current_location()))
-                    && !self.check(&Token::RBrace(self.current_location()))
-                    && !self.is_at_end()
-                {
-                    statements.push(self.parse_statement()?);
-                }
+                let statements = self.parse_case_body()?;
 
                 cases.push(CaseNode::Case {
                     value: Box::new(value),
@@ -356,14 +334,7 @@ impl Parser {
                     "Expected ':' after 'default'",
                 )?;
 
-                let mut statements = Vec::new();
-                while !self.check(&Token::Case(self.current_location()))
-                    && !self.check(&Token::Default(self.current_location()))
-                    && !self.check(&Token::RBrace(self.current_location()))
-                    && !self.is_at_end()
-                {
-                    statements.push(self.parse_statement()?);
-                }
+                let statements = self.parse_case_body()?;
 
                 cases.push(CaseNode::Default {
                     statements,
@@ -387,6 +358,18 @@ impl Parser {
             cases,
             location: loc,
         })
+    }
+
+    fn parse_case_body(&mut self) -> Result<Vec<AstNode>, ParseError> {
+        let mut statements = Vec::new();
+        while !self.check(&Token::Case(self.current_location()))
+            && !self.check(&Token::Default(self.current_location()))
+            && !self.check(&Token::RBrace(self.current_location()))
+            && !self.is_at_end()
+        {
+            statements.push(self.parse_statement()?);
+        }
+        Ok(statements)
     }
 
     /// Parse variable declaration: type name[[size]]* [= init];

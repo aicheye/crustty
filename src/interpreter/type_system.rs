@@ -16,6 +16,7 @@
 
 use crate::interpreter::engine::Interpreter;
 use crate::interpreter::errors::RuntimeError;
+use crate::memory::value::Value;
 use crate::parser::ast::*;
 
 impl Interpreter {
@@ -39,19 +40,7 @@ impl Interpreter {
 
             AstNode::Variable(name, location) => {
                 // Look up variable type in current frame
-                let frame = self
-                    .stack
-                    .current_frame()
-                    .ok_or(RuntimeError::NoStackFrame {
-                        location: *location,
-                    })?;
-
-                let var = frame
-                    .get_var(name)
-                    .ok_or_else(|| RuntimeError::UndefinedVariable {
-                        name: name.clone(),
-                        location: *location,
-                    })?;
+                let var = self.get_current_frame_var(name, *location)?;
 
                 Ok(var.var_type.clone())
             }
@@ -226,6 +215,45 @@ impl Interpreter {
             _ => Err(RuntimeError::UnsupportedOperation {
                 message: format!("Cannot infer type of expression: {:?}", expr),
                 location: SourceLocation::new(1, 1),
+            }),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn coerce_value_to_type(
+        &self,
+        value: Value,
+        target_type: &Type,
+        _location: SourceLocation,
+    ) -> Result<Value, RuntimeError> {
+        if target_type.pointer_depth > 0 || !target_type.array_dims.is_empty() {
+            return Ok(value);
+        }
+
+        match (&target_type.base, &value) {
+            (BaseType::Char, Value::Int(n)) => Ok(Value::Char((*n & 0xFF) as i8)),
+            (BaseType::Char, Value::Char(_)) => Ok(value),
+            (BaseType::Int, Value::Char(c)) => Ok(Value::Int(*c as i32)),
+            (BaseType::Int, Value::Int(_)) => Ok(value),
+            _ => Ok(value),
+        }
+    }
+
+    /// Convert a value to a boolean (for conditionals)
+    #[inline]
+    pub(crate) fn value_to_bool(
+        val: &Value,
+        location: SourceLocation,
+    ) -> Result<bool, RuntimeError> {
+        match val {
+            Value::Int(n) => Ok(*n != 0),
+            Value::Char(c) => Ok(*c != 0),
+            Value::Pointer(_) => Ok(true),
+            Value::Null => Ok(false),
+            _ => Err(RuntimeError::TypeError {
+                expected: "int or pointer".to_string(),
+                got: format!("{:?}", val),
+                location,
             }),
         }
     }

@@ -147,6 +147,41 @@ impl Parser {
         }
     }
 
+    pub(crate) fn expect_lparen(&mut self, ctx: &str) -> Result<(), ParseError> {
+        self.expect_token(
+            &Token::LParen(self.current_location()),
+            &format!("Expected '(' {ctx}"),
+        )
+    }
+
+    pub(crate) fn expect_rparen(&mut self, ctx: &str) -> Result<(), ParseError> {
+        self.expect_token(
+            &Token::RParen(self.current_location()),
+            &format!("Expected ')' {ctx}"),
+        )
+    }
+
+    pub(crate) fn expect_lbrace(&mut self, ctx: &str) -> Result<(), ParseError> {
+        self.expect_token(
+            &Token::LBrace(self.current_location()),
+            &format!("Expected '{{' {ctx}"),
+        )
+    }
+
+    pub(crate) fn expect_rbrace(&mut self, ctx: &str) -> Result<(), ParseError> {
+        self.expect_token(
+            &Token::RBrace(self.current_location()),
+            &format!("Expected '}}' {ctx}"),
+        )
+    }
+
+    pub(crate) fn expect_semicolon(&mut self, ctx: &str) -> Result<(), ParseError> {
+        self.expect_token(
+            &Token::Semicolon(self.current_location()),
+            &format!("Expected ';' {ctx}"),
+        )
+    }
+
     pub(crate) fn expect_identifier(&mut self) -> Result<String, ParseError> {
         if let Token::Ident(name, _) = self.peek_token() {
             self.advance();

@@ -98,230 +98,149 @@ impl Parser {
         Ok(expr)
     }
 
-    /// Parse logical OR (||)
-    fn parse_logical_or(&mut self) -> Result<AstNode, ParseError> {
-        let mut left = self.parse_logical_and()?;
+    fn parse_left_assoc_binary<F>(
+        &mut self,
+        next_level_parser: F,
+        operators: &[(Token, BinOp)],
+    ) -> Result<AstNode, ParseError>
+    where
+        F: Fn(&mut Self) -> Result<AstNode, ParseError>,
+    {
+        let mut left = next_level_parser(self)?;
 
-        while self.match_token(&Token::OrOr(self.current_location())) {
-            let loc = self.previous_location();
-            let right = Box::new(self.parse_logical_and()?);
-            left = AstNode::BinaryOp {
-                op: BinOp::Or,
-                left: Box::new(left),
-                right,
-                location: loc,
-            };
+        loop {
+            let loc = self.current_location();
+            let mut matched_op = None;
+
+            for (token, op) in operators {
+                if self.match_token(token) {
+                    matched_op = Some(op.clone());
+                    break;
+                }
+            }
+
+            if let Some(op) = matched_op {
+                let right = Box::new(next_level_parser(self)?);
+                left = AstNode::BinaryOp {
+                    op,
+                    left: Box::new(left),
+                    right,
+                    location: loc,
+                };
+            } else {
+                break;
+            }
         }
 
         Ok(left)
+    }
+
+    /// Parse logical OR (||)
+    fn parse_logical_or(&mut self) -> Result<AstNode, ParseError> {
+        let dummy_loc = SourceLocation::new(0, 0);
+        self.parse_left_assoc_binary(
+            Self::parse_logical_and,
+            &[(Token::OrOr(dummy_loc), BinOp::Or)],
+        )
     }
 
     /// Parse logical AND (&&)
     fn parse_logical_and(&mut self) -> Result<AstNode, ParseError> {
-        let mut left = self.parse_bitwise_or()?;
-
-        while self.match_token(&Token::AndAnd(self.current_location())) {
-            let loc = self.previous_location();
-            let right = Box::new(self.parse_bitwise_or()?);
-            left = AstNode::BinaryOp {
-                op: BinOp::And,
-                left: Box::new(left),
-                right,
-                location: loc,
-            };
-        }
-
-        Ok(left)
+        let dummy_loc = SourceLocation::new(0, 0);
+        self.parse_left_assoc_binary(
+            Self::parse_bitwise_or,
+            &[(Token::AndAnd(dummy_loc), BinOp::And)],
+        )
     }
 
     /// Parse bitwise OR (|)
     fn parse_bitwise_or(&mut self) -> Result<AstNode, ParseError> {
-        let mut left = self.parse_bitwise_xor()?;
-
-        while self.match_token(&Token::Pipe(self.current_location())) {
-            let loc = self.previous_location();
-            let right = Box::new(self.parse_bitwise_xor()?);
-            left = AstNode::BinaryOp {
-                op: BinOp::BitOr,
-                left: Box::new(left),
-                right,
-                location: loc,
-            };
-        }
-
-        Ok(left)
+        let dummy_loc = SourceLocation::new(0, 0);
+        self.parse_left_assoc_binary(
+            Self::parse_bitwise_xor,
+            &[(Token::Pipe(dummy_loc), BinOp::BitOr)],
+        )
     }
 
     /// Parse bitwise XOR (^)
     fn parse_bitwise_xor(&mut self) -> Result<AstNode, ParseError> {
-        let mut left = self.parse_bitwise_and()?;
-
-        while self.match_token(&Token::Caret(self.current_location())) {
-            let loc = self.previous_location();
-            let right = Box::new(self.parse_bitwise_and()?);
-            left = AstNode::BinaryOp {
-                op: BinOp::BitXor,
-                left: Box::new(left),
-                right,
-                location: loc,
-            };
-        }
-
-        Ok(left)
+        let dummy_loc = SourceLocation::new(0, 0);
+        self.parse_left_assoc_binary(
+            Self::parse_bitwise_and,
+            &[(Token::Caret(dummy_loc), BinOp::BitXor)],
+        )
     }
 
     /// Parse bitwise AND (&)
     fn parse_bitwise_and(&mut self) -> Result<AstNode, ParseError> {
-        let mut left = self.parse_equality()?;
-
-        while self.match_token(&Token::Amp(self.current_location())) {
-            let loc = self.previous_location();
-            let right = Box::new(self.parse_equality()?);
-            left = AstNode::BinaryOp {
-                op: BinOp::BitAnd,
-                left: Box::new(left),
-                right,
-                location: loc,
-            };
-        }
-
-        Ok(left)
+        let dummy_loc = SourceLocation::new(0, 0);
+        self.parse_left_assoc_binary(
+            Self::parse_equality,
+            &[(Token::Amp(dummy_loc), BinOp::BitAnd)],
+        )
     }
 
     /// Parse equality (== !=)
     fn parse_equality(&mut self) -> Result<AstNode, ParseError> {
-        let mut left = self.parse_relational()?;
-
-        loop {
-            let loc = self.current_location();
-            let op = if self.match_token(&Token::EqEq(loc)) {
-                BinOp::Eq
-            } else if self.match_token(&Token::NotEq(loc)) {
-                BinOp::Ne
-            } else {
-                break;
-            };
-
-            let right = Box::new(self.parse_relational()?);
-            left = AstNode::BinaryOp {
-                op,
-                left: Box::new(left),
-                right,
-                location: loc,
-            };
-        }
-
-        Ok(left)
+        let dummy_loc = SourceLocation::new(0, 0);
+        self.parse_left_assoc_binary(
+            Self::parse_relational,
+            &[
+                (Token::EqEq(dummy_loc), BinOp::Eq),
+                (Token::NotEq(dummy_loc), BinOp::Ne),
+            ],
+        )
     }
 
     /// Parse relational (< <= > >=)
     fn parse_relational(&mut self) -> Result<AstNode, ParseError> {
-        let mut left = self.parse_shift()?;
-
-        loop {
-            let loc = self.current_location();
-            let op = if self.match_token(&Token::Lt(loc)) {
-                BinOp::Lt
-            } else if self.match_token(&Token::Le(loc)) {
-                BinOp::Le
-            } else if self.match_token(&Token::Gt(loc)) {
-                BinOp::Gt
-            } else if self.match_token(&Token::Ge(loc)) {
-                BinOp::Ge
-            } else {
-                break;
-            };
-
-            let right = Box::new(self.parse_shift()?);
-            left = AstNode::BinaryOp {
-                op,
-                left: Box::new(left),
-                right,
-                location: loc,
-            };
-        }
-
-        Ok(left)
+        let dummy_loc = SourceLocation::new(0, 0);
+        self.parse_left_assoc_binary(
+            Self::parse_shift,
+            &[
+                (Token::Lt(dummy_loc), BinOp::Lt),
+                (Token::Le(dummy_loc), BinOp::Le),
+                (Token::Gt(dummy_loc), BinOp::Gt),
+                (Token::Ge(dummy_loc), BinOp::Ge),
+            ],
+        )
     }
 
     /// Parse bitwise shift (<< >>)
     fn parse_shift(&mut self) -> Result<AstNode, ParseError> {
-        let mut left = self.parse_additive()?;
-
-        loop {
-            let loc = self.current_location();
-            let op = if self.match_token(&Token::LtLt(loc)) {
-                BinOp::BitShl
-            } else if self.match_token(&Token::GtGt(loc)) {
-                BinOp::BitShr
-            } else {
-                break;
-            };
-
-            let right = Box::new(self.parse_additive()?);
-            left = AstNode::BinaryOp {
-                op,
-                left: Box::new(left),
-                right,
-                location: loc,
-            };
-        }
-
-        Ok(left)
+        let dummy_loc = SourceLocation::new(0, 0);
+        self.parse_left_assoc_binary(
+            Self::parse_additive,
+            &[
+                (Token::LtLt(dummy_loc), BinOp::BitShl),
+                (Token::GtGt(dummy_loc), BinOp::BitShr),
+            ],
+        )
     }
 
     /// Parse additive (+ -)
     fn parse_additive(&mut self) -> Result<AstNode, ParseError> {
-        let mut left = self.parse_multiplicative()?;
-
-        loop {
-            let loc = self.current_location();
-            let op = if self.match_token(&Token::Plus(loc)) {
-                BinOp::Add
-            } else if self.match_token(&Token::Minus(loc)) {
-                BinOp::Sub
-            } else {
-                break;
-            };
-
-            let right = Box::new(self.parse_multiplicative()?);
-            left = AstNode::BinaryOp {
-                op,
-                left: Box::new(left),
-                right,
-                location: loc,
-            };
-        }
-
-        Ok(left)
+        let dummy_loc = SourceLocation::new(0, 0);
+        self.parse_left_assoc_binary(
+            Self::parse_multiplicative,
+            &[
+                (Token::Plus(dummy_loc), BinOp::Add),
+                (Token::Minus(dummy_loc), BinOp::Sub),
+            ],
+        )
     }
 
     /// Parse multiplicative (* / %)
     fn parse_multiplicative(&mut self) -> Result<AstNode, ParseError> {
-        let mut left = self.parse_cast()?;
-
-        loop {
-            let loc = self.current_location();
-            let op = if self.match_token(&Token::Star(loc)) {
-                BinOp::Mul
-            } else if self.match_token(&Token::Slash(loc)) {
-                BinOp::Div
-            } else if self.match_token(&Token::Percent(loc)) {
-                BinOp::Mod
-            } else {
-                break;
-            };
-
-            let right = Box::new(self.parse_cast()?);
-            left = AstNode::BinaryOp {
-                op,
-                left: Box::new(left),
-                right,
-                location: loc,
-            };
-        }
-
-        Ok(left)
+        let dummy_loc = SourceLocation::new(0, 0);
+        self.parse_left_assoc_binary(
+            Self::parse_cast,
+            &[
+                (Token::Star(dummy_loc), BinOp::Mul),
+                (Token::Slash(dummy_loc), BinOp::Div),
+                (Token::Percent(dummy_loc), BinOp::Mod),
+            ],
+        )
     }
 
     /// Parse cast: (Type*)expr
