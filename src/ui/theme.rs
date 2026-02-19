@@ -1,5 +1,16 @@
+//! Color theme for the CRusTTY TUI.
+//!
+//! Defines [`Theme`], a simple palette struct, and [`DEFAULT_THEME`], the single
+//! global color scheme used by all panes. Colors are expressed as [`Color::Rgb`]
+//! values to ensure consistent rendering across terminals that support true color.
+
 use ratatui::style::Color;
 
+/// Color palette used across all TUI panes.
+///
+/// Every field is a [`ratatui::style::Color`]. The [`DEFAULT_THEME`] constant
+/// provides the canonical Catppuccin-inspired palette; replace it with a custom
+/// `Theme` value to apply a different color scheme globally.
 pub struct Theme {
     pub fg: Color,
     pub primary: Color,   // Blue
@@ -19,21 +30,22 @@ pub struct Theme {
     pub return_value: Color,   // Special color for return values
 }
 
+/// The default Catppuccin Mocha-inspired color palette used by CRusTTY.
 pub const DEFAULT_THEME: Theme = Theme {
     fg: Color::Rgb(205, 214, 244),
-    primary: Color::Rgb(137, 180, 250),   // Blue
+    primary: Color::Rgb(137, 180, 250), // Blue
     secondary: Color::Rgb(250, 179, 135), // Orange
     comment: Color::Rgb(108, 112, 134),
     success: Color::Rgb(166, 227, 161),
     error: Color::Rgb(243, 139, 168),
-    keyword: Color::Rgb(137, 180, 250),        // Blue for keywords
-    string: Color::Rgb(250, 179, 135),         // Orange for strings
-    number: Color::Rgb(250, 179, 135),         // Orange for numbers
+    keyword: Color::Rgb(137, 180, 250), // Blue for keywords
+    string: Color::Rgb(250, 179, 135),  // Orange for strings
+    number: Color::Rgb(250, 179, 135),  // Orange for numbers
     border_focused: Color::Rgb(249, 226, 175), // Yellow border for focus
-    border_normal: Color::Rgb(108, 112, 134),  // Grey border for normal
-    current_line_bg: Color::Rgb(50, 50, 70),   // Slightly lighter BG for current line
-    function: Color::Rgb(249, 226, 175),       // Yellow for functions
+    border_normal: Color::Rgb(108, 112, 134), // Grey border for normal
+    current_line_bg: Color::Rgb(50, 50, 70), // Slightly lighter BG for current line
+    function: Color::Rgb(249, 226, 175),     // Yellow for functions
     muted_function: Color::Rgb(180, 165, 120), // Muted yellow for call chain
-    type_name: Color::Rgb(148, 226, 213),      // Cyan/teal for type names
-    return_value: Color::Rgb(245, 194, 231),   // Pink for return values
+    type_name: Color::Rgb(148, 226, 213),    // Cyan/teal for type names
+    return_value: Color::Rgb(245, 194, 231), // Pink for return values
 };

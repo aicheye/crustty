@@ -22,7 +22,10 @@ use crate::parser::ast::*;
 impl Interpreter {
     /// Infer the type of an expression
     /// This is needed for sizeof(expr) to work properly
-    pub(crate) fn infer_expr_type(&mut self, expr: &AstNode) -> Result<Type, RuntimeError> {
+    pub(crate) fn infer_expr_type(
+        &mut self,
+        expr: &AstNode,
+    ) -> Result<Type, RuntimeError> {
         match expr {
             AstNode::IntLiteral(_, _) => Ok(Type::new(BaseType::Int)),
 
@@ -99,7 +102,10 @@ impl Interpreter {
                     }
                     UnOp::Neg | UnOp::BitNot => Ok(Type::new(BaseType::Int)),
                     UnOp::Not => Ok(Type::new(BaseType::Int)), // logical not returns int (0 or 1)
-                    UnOp::PreInc | UnOp::PreDec | UnOp::PostInc | UnOp::PostDec => {
+                    UnOp::PreInc
+                    | UnOp::PreDec
+                    | UnOp::PostInc
+                    | UnOp::PostDec => {
                         // ++/-- returns the type of the operand
                         self.infer_expr_type(operand)
                     }
@@ -114,12 +120,13 @@ impl Interpreter {
 
             AstNode::FunctionCall { name, location, .. } => {
                 // Look up function return type
-                let func_def = self.function_defs.get(name).ok_or_else(|| {
-                    RuntimeError::UndefinedFunction {
-                        name: name.clone(),
-                        location: *location,
-                    }
-                })?;
+                let func_def =
+                    self.function_defs.get(name).ok_or_else(|| {
+                        RuntimeError::UndefinedFunction {
+                            name: name.clone(),
+                            location: *location,
+                        }
+                    })?;
                 Ok(func_def.return_type.clone())
             }
 
@@ -167,7 +174,8 @@ impl Interpreter {
                     }
                 };
 
-                let field_type = self.get_field_type(struct_name, member, *location)?;
+                let field_type =
+                    self.get_field_type(struct_name, member, *location)?;
                 Ok(field_type)
             }
 
@@ -198,7 +206,8 @@ impl Interpreter {
                     }
                 };
 
-                let field_type = self.get_field_type(struct_name, member, *location)?;
+                let field_type =
+                    self.get_field_type(struct_name, member, *location)?;
                 Ok(field_type)
             }
 
@@ -231,7 +240,9 @@ impl Interpreter {
         }
 
         match (&target_type.base, &value) {
-            (BaseType::Char, Value::Int(n)) => Ok(Value::Char((*n & 0xFF) as i8)),
+            (BaseType::Char, Value::Int(n)) => {
+                Ok(Value::Char((*n & 0xFF) as i8))
+            }
             (BaseType::Char, Value::Char(_)) => Ok(value),
             (BaseType::Int, Value::Char(c)) => Ok(Value::Int(*c as i32)),
             (BaseType::Int, Value::Int(_)) => Ok(value),

@@ -1,4 +1,3 @@
-#![allow(dead_code)] // This module provides a complete memory API, not all methods are currently used
 //! Memory model for the C interpreter
 //!
 //! This module provides the core memory abstractions:
@@ -34,7 +33,10 @@ use std::hash::BuildHasher;
 use value::Address;
 
 /// Calculate the size of a type in bytes
-pub fn sizeof_type<S: BuildHasher>(t: &Type, struct_defs: &HashMap<String, StructDef, S>) -> usize {
+pub fn sizeof_type<S: BuildHasher>(
+    t: &Type,
+    struct_defs: &HashMap<String, StructDef, S>,
+) -> usize {
     // If it's a pointer, size is always 8 bytes
     if t.pointer_depth > 0 {
         return 8;

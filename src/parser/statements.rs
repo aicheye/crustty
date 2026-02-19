@@ -24,10 +24,14 @@ use crate::parser::parse::{ParseError, Parser};
 
 impl Parser {
     /// Parse block statements (inside braces, excluding the braces themselves)
-    pub(crate) fn parse_block_statements(&mut self) -> Result<Vec<AstNode>, ParseError> {
+    pub(crate) fn parse_block_statements(
+        &mut self,
+    ) -> Result<Vec<AstNode>, ParseError> {
         let mut statements = Vec::new();
 
-        while !self.check(&Token::RBrace(self.current_location())) && !self.is_at_end() {
+        while !self.check(&Token::RBrace(self.current_location()))
+            && !self.is_at_end()
+        {
             statements.push(self.parse_statement()?);
         }
 
@@ -173,11 +177,12 @@ impl Parser {
 
         let then_branch = self.parse_statement_or_block()?;
 
-        let else_branch = if self.match_token(&Token::Else(self.current_location())) {
-            Some(self.parse_statement_or_block()?)
-        } else {
-            None
-        };
+        let else_branch =
+            if self.match_token(&Token::Else(self.current_location())) {
+                Some(self.parse_statement_or_block()?)
+            } else {
+                None
+            };
 
         Ok(AstNode::If {
             condition,
@@ -261,11 +266,12 @@ impl Parser {
         };
 
         // Condition (optional)
-        let condition = if self.check(&Token::Semicolon(self.current_location())) {
-            None
-        } else {
-            Some(Box::new(self.parse_expression()?))
-        };
+        let condition =
+            if self.check(&Token::Semicolon(self.current_location())) {
+                None
+            } else {
+                Some(Box::new(self.parse_expression()?))
+            };
         self.expect_token(
             &Token::Semicolon(self.current_location()),
             "Expected ';' after for condition",
@@ -311,7 +317,9 @@ impl Parser {
 
         let mut cases = Vec::new();
 
-        while !self.check(&Token::RBrace(self.current_location())) && !self.is_at_end() {
+        while !self.check(&Token::RBrace(self.current_location()))
+            && !self.is_at_end()
+        {
             if self.match_token(&Token::Case(self.current_location())) {
                 let case_loc = self.previous_location(); // Capture case keyword location
                 let value = self.parse_expression()?;
@@ -327,7 +335,8 @@ impl Parser {
                     statements,
                     location: case_loc,
                 });
-            } else if self.match_token(&Token::Default(self.current_location())) {
+            } else if self.match_token(&Token::Default(self.current_location()))
+            {
                 let default_loc = self.previous_location(); // Capture default keyword location
                 self.expect_token(
                     &Token::Colon(self.current_location()),
@@ -342,7 +351,8 @@ impl Parser {
                 });
             } else {
                 return Err(ParseError {
-                    message: "Expected 'case' or 'default' in switch body".to_string(),
+                    message: "Expected 'case' or 'default' in switch body"
+                        .to_string(),
                     location: self.current_location(),
                 });
             }
@@ -372,9 +382,11 @@ impl Parser {
         Ok(statements)
     }
 
-    /// Parse variable declaration: type name[[size]]* [= init];
+    /// Parse variable declaration: `type name[[size]]* [= init];`
     /// Supports C-style array declarations: int arr[5];
-    pub(crate) fn parse_variable_declaration(&mut self) -> Result<AstNode, ParseError> {
+    pub(crate) fn parse_variable_declaration(
+        &mut self,
+    ) -> Result<AstNode, ParseError> {
         let mut var_type = self.parse_type()?;
         let name = self.expect_identifier()?;
         let loc = self.previous_location();
@@ -393,7 +405,8 @@ impl Parser {
                     var_type.array_dims.push(Some(n as usize));
                 } else {
                     return Err(ParseError {
-                        message: "Array size must be a constant integer".to_string(),
+                        message: "Array size must be a constant integer"
+                            .to_string(),
                         location: self.current_location(),
                     });
                 }
@@ -424,7 +437,9 @@ impl Parser {
     }
 
     /// Parse statement or block (for if/while/for bodies)
-    pub(crate) fn parse_statement_or_block(&mut self) -> Result<Vec<AstNode>, ParseError> {
+    pub(crate) fn parse_statement_or_block(
+        &mut self,
+    ) -> Result<Vec<AstNode>, ParseError> {
         if self.match_token(&Token::LBrace(self.current_location())) {
             let statements = self.parse_block_statements()?;
             self.expect_token(

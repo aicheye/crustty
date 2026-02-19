@@ -19,8 +19,8 @@
 //! - Nested structures and arrays with indentation
 
 use super::utils::{
-    format_type_annotation, format_value_styled, render_array_elements, render_struct_fields,
-    RenderCtx,
+    format_type_annotation, format_value_styled, render_array_elements,
+    render_struct_fields, RenderCtx,
 };
 use crate::memory::{stack::Stack, value::Value};
 use crate::parser::ast::StructDef;
@@ -47,8 +47,11 @@ pub struct StackRenderData<'a, S: BuildHasher, T: BuildHasher> {
     pub struct_defs: &'a HashMap<String, StructDef, S>,
     pub source_code: &'a str,
     pub return_value: Option<&'a Value>,
-    pub function_defs: &'a HashMap<String, crate::interpreter::engine::FunctionDef, T>,
+    pub function_defs:
+        &'a HashMap<String, crate::interpreter::engine::FunctionDef, T>,
     pub error_address: Option<u64>,
+    pub is_focused: bool,
+    pub scroll_state: &'a mut StackScrollState,
 }
 
 /// Render the stack pane
@@ -56,10 +59,8 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
     frame: &mut Frame,
     area: Rect,
     data: StackRenderData<S, T>,
-    is_focused: bool,
-    scroll_state: &mut StackScrollState,
 ) {
-    let border_style = if is_focused {
+    let border_style = if data.is_focused {
         Style::default()
             .fg(DEFAULT_THEME.border_focused)
             .add_modifier(Modifier::BOLD)
@@ -79,12 +80,18 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
     let content_width = area.width.saturating_sub(2) as usize; // borders only
 
     if frames.is_empty() {
-        all_items.push(ListItem::new("(empty)").style(Style::default().fg(DEFAULT_THEME.comment)));
+        all_items.push(
+            ListItem::new("(empty)")
+                .style(Style::default().fg(DEFAULT_THEME.comment)),
+        );
     } else {
         for (depth, stack_frame) in frames.iter().enumerate() {
             // Create emphasized frame header with box-drawing characters
             let frame_header = Line::from(vec![
-                Span::styled("▸ ", Style::default().fg(DEFAULT_THEME.secondary)),
+                Span::styled(
+                    "▸ ",
+                    Style::default().fg(DEFAULT_THEME.secondary),
+                ),
                 Span::styled(
                     format!("Frame {} ", depth),
                     Style::default().fg(DEFAULT_THEME.comment),
@@ -117,22 +124,30 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                     let frame_num = caller_depth - 1;
 
                     // Format: ↪ [N] function() → call_site
-                    let caller_info = format!("  ↪ [{}] {}() → ", frame_num, caller_name);
+                    let caller_info =
+                        format!("  ↪ [{}] {}() → ", frame_num, caller_name);
 
                     // Wrap the call site text if it's too long
                     if caller_info.len() + trimmed.len() <= content_width {
                         // Fits on one line
                         let location_line = Line::from(vec![
-                            Span::styled("  ↪ ", Style::default().fg(DEFAULT_THEME.comment)),
+                            Span::styled(
+                                "  ↪ ",
+                                Style::default().fg(DEFAULT_THEME.comment),
+                            ),
                             Span::styled(
                                 format!("[{}] ", frame_num),
                                 Style::default().fg(DEFAULT_THEME.comment),
                             ),
                             Span::styled(
                                 format!("{}()", caller_name),
-                                Style::default().fg(DEFAULT_THEME.muted_function),
+                                Style::default()
+                                    .fg(DEFAULT_THEME.muted_function),
                             ),
-                            Span::styled(" → ", Style::default().fg(DEFAULT_THEME.comment)),
+                            Span::styled(
+                                " → ",
+                                Style::default().fg(DEFAULT_THEME.comment),
+                            ),
                             Span::styled(
                                 trimmed.to_string(),
                                 Style::default().fg(DEFAULT_THEME.comment),
@@ -142,20 +157,29 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                     } else {
                         // Need to wrap - first line has the caller info
                         let call_site_indent = 4; // Indent for continuation lines
-                        let first_line_chars = content_width.saturating_sub(caller_info.len());
-                        let (first_part, rest) = split_at_char_boundary(trimmed, first_line_chars);
+                        let first_line_chars =
+                            content_width.saturating_sub(caller_info.len());
+                        let (first_part, rest) =
+                            split_at_char_boundary(trimmed, first_line_chars);
 
                         let first_line = Line::from(vec![
-                            Span::styled("  ↪ ", Style::default().fg(DEFAULT_THEME.comment)),
+                            Span::styled(
+                                "  ↪ ",
+                                Style::default().fg(DEFAULT_THEME.comment),
+                            ),
                             Span::styled(
                                 format!("[{}] ", frame_num),
                                 Style::default().fg(DEFAULT_THEME.comment),
                             ),
                             Span::styled(
                                 format!("{}()", caller_name),
-                                Style::default().fg(DEFAULT_THEME.muted_function),
+                                Style::default()
+                                    .fg(DEFAULT_THEME.muted_function),
                             ),
-                            Span::styled(" → ", Style::default().fg(DEFAULT_THEME.comment)),
+                            Span::styled(
+                                " → ",
+                                Style::default().fg(DEFAULT_THEME.comment),
+                            ),
                             Span::styled(
                                 first_part.to_string(),
                                 Style::default().fg(DEFAULT_THEME.comment),
@@ -166,8 +190,10 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                         // Wrap remaining text
                         let mut remaining = rest;
                         while !remaining.is_empty() {
-                            let wrap_width = content_width.saturating_sub(call_site_indent);
-                            let (part, next_rest) = split_at_char_boundary(remaining, wrap_width);
+                            let wrap_width =
+                                content_width.saturating_sub(call_site_indent);
+                            let (part, next_rest) =
+                                split_at_char_boundary(remaining, wrap_width);
                             let continuation = Line::from(vec![
                                 Span::raw("    "), // Indent continuation lines
                                 Span::styled(
@@ -185,23 +211,29 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
             // Display return value if present (only for top frame - the currently executing function)
             if depth == frames.len() - 1 {
                 if let Some(ret_val) = data.return_value {
-                    let val_spans = format_value_styled(ret_val, data.struct_defs, 0);
+                    let val_spans =
+                        format_value_styled(ret_val, data.struct_defs, 0);
 
                     // Get return type from function definition
                     let return_type_str = data
                         .function_defs
                         .get(&stack_frame.function_name)
                         .map(|func_def| {
-                            format_type_annotation(&func_def.return_type, data.struct_defs)
+                            format_type_annotation(
+                                &func_def.return_type,
+                                data.struct_defs,
+                            )
                         })
                         .unwrap_or_else(|| "?".to_string());
 
                     // Calculate widths for alignment
-                    let val_width: usize = val_spans.iter().map(|s| s.content.len()).sum();
+                    let val_width: usize =
+                        val_spans.iter().map(|s| s.content.len()).sum();
                     // "     ↖ " (7) + "return " (7) + ": " (2) = 16
                     let left_width = 16 + val_width;
                     let right_width = return_type_str.len();
-                    let padding = content_width.saturating_sub(left_width + right_width);
+                    let padding =
+                        content_width.saturating_sub(left_width + right_width);
 
                     let mut spans = vec![
                         Span::styled(
@@ -216,7 +248,10 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                                 .fg(DEFAULT_THEME.return_value)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(": ", Style::default().fg(DEFAULT_THEME.return_value)),
+                        Span::styled(
+                            ": ",
+                            Style::default().fg(DEFAULT_THEME.return_value),
+                        ),
                     ];
 
                     spans.extend(val_spans.into_iter().map(|span| {
@@ -251,37 +286,50 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                     };
 
                     // Format the address
-                    let addr_style = if Some(local_var.address) == data.error_address {
-                        Style::default()
-                            .fg(DEFAULT_THEME.error)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(DEFAULT_THEME.comment)
-                    };
+                    let addr_style =
+                        if Some(local_var.address) == data.error_address {
+                            Style::default()
+                                .fg(DEFAULT_THEME.error)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(DEFAULT_THEME.comment)
+                        };
 
-                    let addr_span =
-                        Span::styled(format!("0x{:08x} ", local_var.address), addr_style);
+                    let addr_span = Span::styled(
+                        format!("0x{:08x} ", local_var.address),
+                        addr_style,
+                    );
 
                     // Show structs with fields on separate lines
                     match &local_var.value {
                         Value::Array(elements) => {
                             // Treat arrays similarly to structs - show each index with address
                             let init_span = if let Some(s) = init_state {
-                                Span::styled(s, Style::default().fg(DEFAULT_THEME.error))
+                                Span::styled(
+                                    s,
+                                    Style::default().fg(DEFAULT_THEME.error),
+                                )
                             } else {
                                 Span::raw("")
                             };
 
                             // Get the array type name
-                            let type_str =
-                                format_type_annotation(&local_var.var_type, data.struct_defs);
+                            let type_str = format_type_annotation(
+                                &local_var.var_type,
+                                data.struct_defs,
+                            );
 
                             // Align type to right
                             let type_width = type_str.len();
-                            let init_len = if let Some(s) = init_state { s.len() } else { 0 };
+                            let init_len = if let Some(s) = init_state {
+                                s.len()
+                            } else {
+                                0
+                            };
                             // addr(11) + " " + name + " " + ": " + init = 15 + name + init
                             let left_width = 15 + var_name.len() + init_len;
-                            let padding = content_width.saturating_sub(left_width + type_width);
+                            let padding = content_width
+                                .saturating_sub(left_width + type_width);
 
                             let header = Line::from(vec![
                                 addr_span,
@@ -289,12 +337,16 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                                     format!(" {} ", var_name),
                                     Style::default().fg(DEFAULT_THEME.fg),
                                 ),
-                                Span::styled(": ", Style::default().fg(DEFAULT_THEME.fg)),
+                                Span::styled(
+                                    ": ",
+                                    Style::default().fg(DEFAULT_THEME.fg),
+                                ),
                                 init_span,
                                 Span::raw(" ".repeat(padding)),
                                 Span::styled(
                                     type_str,
-                                    Style::default().fg(DEFAULT_THEME.type_name),
+                                    Style::default()
+                                        .fg(DEFAULT_THEME.type_name),
                                 ),
                             ]);
 
@@ -317,21 +369,31 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                         }
                         Value::Struct(fields) => {
                             let init_span = if let Some(s) = init_state {
-                                Span::styled(s, Style::default().fg(DEFAULT_THEME.error))
+                                Span::styled(
+                                    s,
+                                    Style::default().fg(DEFAULT_THEME.error),
+                                )
                             } else {
                                 Span::raw("")
                             };
 
                             // Get the struct type name
-                            let type_str =
-                                format_type_annotation(&local_var.var_type, data.struct_defs);
+                            let type_str = format_type_annotation(
+                                &local_var.var_type,
+                                data.struct_defs,
+                            );
 
                             // Align type to right
                             let type_width = type_str.len();
-                            let init_len = if let Some(s) = init_state { s.len() } else { 0 };
+                            let init_len = if let Some(s) = init_state {
+                                s.len()
+                            } else {
+                                0
+                            };
                             // addr(11) + " " + name + " " + ": " + init = 15 + name + init
                             let left_width = 15 + var_name.len() + init_len;
-                            let padding = content_width.saturating_sub(left_width + type_width);
+                            let padding = content_width
+                                .saturating_sub(left_width + type_width);
 
                             let header = Line::from(vec![
                                 addr_span,
@@ -339,12 +401,16 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                                     format!(" {} ", var_name),
                                     Style::default().fg(DEFAULT_THEME.fg),
                                 ),
-                                Span::styled(": ", Style::default().fg(DEFAULT_THEME.fg)),
+                                Span::styled(
+                                    ": ",
+                                    Style::default().fg(DEFAULT_THEME.fg),
+                                ),
                                 init_span,
                                 Span::raw(" ".repeat(padding)),
                                 Span::styled(
                                     type_str,
-                                    Style::default().fg(DEFAULT_THEME.type_name),
+                                    Style::default()
+                                        .fg(DEFAULT_THEME.type_name),
                                 ),
                             ]);
 
@@ -366,22 +432,33 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                             );
                         }
                         _ => {
-                            let val_spans =
-                                format_value_styled(&local_var.value, data.struct_defs, 0);
+                            let val_spans = format_value_styled(
+                                &local_var.value,
+                                data.struct_defs,
+                                0,
+                            );
 
                             // Only add init_span if the value isn't already displaying its uninitialized state
-                            let init_span = if matches!(local_var.value, Value::Uninitialized) {
+                            let init_span = if matches!(
+                                local_var.value,
+                                Value::Uninitialized
+                            ) {
                                 // Value::Uninitialized already displays [uninit], don't duplicate
                                 Span::raw("")
                             } else if let Some(s) = init_state {
-                                Span::styled(s, Style::default().fg(DEFAULT_THEME.error))
+                                Span::styled(
+                                    s,
+                                    Style::default().fg(DEFAULT_THEME.error),
+                                )
                             } else {
                                 Span::raw("")
                             };
 
                             // Add type annotation for non-struct variables
-                            let type_str =
-                                format_type_annotation(&local_var.var_type, data.struct_defs);
+                            let type_str = format_type_annotation(
+                                &local_var.var_type,
+                                data.struct_defs,
+                            );
                             let type_width = if type_str.is_empty() {
                                 0
                             } else {
@@ -389,17 +466,24 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                             };
 
                             // Width calculation for alignment
-                            let val_width: usize = val_spans.iter().map(|s| s.content.len()).sum();
-                            let init_content: &str =
-                                if matches!(local_var.value, Value::Uninitialized) {
-                                    ""
-                                } else {
-                                    init_state.unwrap_or_default()
-                                };
+                            let val_width: usize =
+                                val_spans.iter().map(|s| s.content.len()).sum();
+                            let init_content: &str = if matches!(
+                                local_var.value,
+                                Value::Uninitialized
+                            ) {
+                                ""
+                            } else {
+                                init_state.unwrap_or_default()
+                            };
 
                             // addr(11) + name + " " + ": " + val + init = 14 + name + val + init
-                            let left_width = 14 + var_name.len() + val_width + init_content.len();
-                            let padding = content_width.saturating_sub(left_width + type_width);
+                            let left_width = 14
+                                + var_name.len()
+                                + val_width
+                                + init_content.len();
+                            let padding = content_width
+                                .saturating_sub(left_width + type_width);
 
                             let mut spans = vec![
                                 addr_span,
@@ -407,7 +491,10 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                                     format!("{} ", var_name),
                                     Style::default().fg(DEFAULT_THEME.fg),
                                 ),
-                                Span::styled(": ", Style::default().fg(DEFAULT_THEME.fg)),
+                                Span::styled(
+                                    ": ",
+                                    Style::default().fg(DEFAULT_THEME.fg),
+                                ),
                             ];
 
                             spans.extend(val_spans);
@@ -418,7 +505,8 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                                 spans.push(Span::raw(" ".repeat(padding)));
                                 spans.push(Span::styled(
                                     type_str,
-                                    Style::default().fg(DEFAULT_THEME.type_name),
+                                    Style::default()
+                                        .fg(DEFAULT_THEME.type_name),
                                 ));
                             }
 
@@ -431,8 +519,10 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
 
             // Add spacing between frames
             if depth < frames.len() - 1 {
-                let separator =
-                    Line::from(Span::styled("", Style::default().fg(DEFAULT_THEME.comment)));
+                let separator = Line::from(Span::styled(
+                    "",
+                    Style::default().fg(DEFAULT_THEME.comment),
+                ));
                 all_items.push(ListItem::new(separator));
             }
         }
@@ -443,30 +533,30 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
     let visible_height = area.height.saturating_sub(2).max(1) as usize; // Account for borders, min 1
 
     // Smart auto-scroll: scroll to bottom only when content grows
-    if total_items > scroll_state.prev_item_count {
+    if total_items > data.scroll_state.prev_item_count {
         // Content grew (new frame/variable added), auto-scroll to bottom
         if total_items > visible_height {
-            scroll_state.offset = total_items - visible_height;
+            data.scroll_state.offset = total_items - visible_height;
         } else {
-            scroll_state.offset = 0;
+            data.scroll_state.offset = 0;
         }
     } else {
         // Content same or shrank, respect user's scroll position (just clamp)
         if total_items > visible_height {
             let max_scroll = total_items - visible_height;
-            scroll_state.offset = scroll_state.offset.min(max_scroll);
+            data.scroll_state.offset = data.scroll_state.offset.min(max_scroll);
         } else {
-            scroll_state.offset = 0;
+            data.scroll_state.offset = 0;
         }
     }
 
     // Update previous item count for next render
-    scroll_state.prev_item_count = total_items;
+    data.scroll_state.prev_item_count = total_items;
 
     // Take only visible items
     let visible_items: Vec<ListItem> = all_items
         .into_iter()
-        .skip(scroll_state.offset)
+        .skip(data.scroll_state.offset)
         .take(visible_height)
         .collect();
 
@@ -488,7 +578,8 @@ fn split_at_char_boundary(s: &str, max_chars: usize) -> (&str, &str) {
 
     if end == 0 {
         // Edge case: first char is wider than max_chars, just take it
-        let first_char_end = s.char_indices().nth(1).map(|(i, _)| i).unwrap_or(s.len());
+        let first_char_end =
+            s.char_indices().nth(1).map(|(i, _)| i).unwrap_or(s.len());
         (&s[..first_char_end], &s[first_char_end..])
     } else {
         (&s[..end], &s[end..])

@@ -8,6 +8,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::ListItem,
 };
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 
@@ -50,19 +51,24 @@ pub(crate) fn render_array_elements<'a, S: BuildHasher>(
         match elem_value {
             Value::Array(nested_elements) => {
                 // Nested array - show header and recurse
-                let type_str = format_type_annotation(&elem_type, ctx.struct_defs); // struct_defs added
+                let type_str =
+                    format_type_annotation(&elem_type, ctx.struct_defs); // struct_defs added
 
                 // Calculate padding for right-alignment
                 // addr(11) + indent + "[idx] " + ": " = 11 + indent + index_str + 2
                 let index_str = format!("[{}] ", idx);
                 let left_width = 11 + indent.len() + index_str.len() + 2; // +2 for ": "
                 let type_width = type_str.len();
-                let padding = ctx.content_width.saturating_sub(left_width + type_width);
+                let padding =
+                    ctx.content_width.saturating_sub(left_width + type_width);
 
                 let mut spans = vec![
                     addr_span,
                     Span::raw(indent),
-                    Span::styled(index_str, Style::default().fg(DEFAULT_THEME.fg)),
+                    Span::styled(
+                        index_str,
+                        Style::default().fg(DEFAULT_THEME.fg),
+                    ),
                     Span::styled(": ", Style::default().fg(DEFAULT_THEME.fg)),
                 ];
 
@@ -88,18 +94,23 @@ pub(crate) fn render_array_elements<'a, S: BuildHasher>(
             }
             Value::Struct(fields) => {
                 // Struct element - show header and recurse
-                let type_str = format_type_annotation(&elem_type, ctx.struct_defs);
+                let type_str =
+                    format_type_annotation(&elem_type, ctx.struct_defs);
 
                 // Calculate padding for right-alignment
                 let index_str = format!("[{}] ", idx);
                 let left_width = 11 + indent.len() + index_str.len() + 2; // +2 for ": "
                 let type_width = type_str.len();
-                let padding = ctx.content_width.saturating_sub(left_width + type_width);
+                let padding =
+                    ctx.content_width.saturating_sub(left_width + type_width);
 
                 let mut spans = vec![
                     addr_span,
                     Span::raw(indent),
-                    Span::styled(index_str, Style::default().fg(DEFAULT_THEME.fg)),
+                    Span::styled(
+                        index_str,
+                        Style::default().fg(DEFAULT_THEME.fg),
+                    ),
                     Span::styled(": ", Style::default().fg(DEFAULT_THEME.fg)),
                 ];
 
@@ -125,20 +136,28 @@ pub(crate) fn render_array_elements<'a, S: BuildHasher>(
             }
             _ => {
                 // Primitive value - show on single line
-                let val_spans = format_value_styled(elem_value, ctx.struct_defs, 1);
-                let type_str = format_type_annotation(&elem_type, ctx.struct_defs);
+                let val_spans =
+                    format_value_styled(elem_value, ctx.struct_defs, 1);
+                let type_str =
+                    format_type_annotation(&elem_type, ctx.struct_defs);
 
                 // Calculate padding for right-alignment
                 let index_str = format!("[{}] ", idx);
-                let val_width: usize = val_spans.iter().map(|s| s.content.len()).sum();
-                let left_width = 11 + indent.len() + index_str.len() + 2 + val_width;
+                let val_width: usize =
+                    val_spans.iter().map(|s| s.content.len()).sum();
+                let left_width =
+                    11 + indent.len() + index_str.len() + 2 + val_width;
                 let type_width = type_str.len();
-                let padding = ctx.content_width.saturating_sub(left_width + type_width);
+                let padding =
+                    ctx.content_width.saturating_sub(left_width + type_width);
 
                 let mut spans = vec![
                     addr_span,
                     Span::raw(indent),
-                    Span::styled(index_str, Style::default().fg(DEFAULT_THEME.fg)),
+                    Span::styled(
+                        index_str,
+                        Style::default().fg(DEFAULT_THEME.fg),
+                    ),
                     Span::styled(": ", Style::default().fg(DEFAULT_THEME.fg)),
                 ];
 
@@ -160,7 +179,7 @@ pub(crate) fn render_array_elements<'a, S: BuildHasher>(
 
 pub(crate) fn render_struct_fields<'a, S: BuildHasher>(
     all_items: &mut Vec<ListItem<'a>>,
-    fields: &HashMap<String, Value>,
+    fields: &FxHashMap<String, Value>,
     parent_type: &Type,
     base_address: u64,
     indent_level: usize,
@@ -172,7 +191,9 @@ pub(crate) fn render_struct_fields<'a, S: BuildHasher>(
             if let Some(struct_def) = ctx.struct_defs.get(struct_name) {
                 calculate_field_offsets(&struct_def.fields, ctx.struct_defs)
                     .into_iter()
-                    .map(|(name, offset, _size, field_type)| (name, (offset, field_type)))
+                    .map(|(name, offset, _size, field_type)| {
+                        (name, (offset, field_type))
+                    })
                     .collect()
             } else {
                 std::collections::HashMap::new()
@@ -193,7 +214,8 @@ pub(crate) fn render_struct_fields<'a, S: BuildHasher>(
                     format!("0x{:08x} ", base_address + (*offset as u64)),
                     Style::default().fg(DEFAULT_THEME.comment),
                 );
-                let type_str = format_type_annotation(field_type, ctx.struct_defs);
+                let type_str =
+                    format_type_annotation(field_type, ctx.struct_defs);
                 (addr_span, type_str, Some(field_type.clone()))
             } else {
                 (Span::raw("              "), String::new(), None)
@@ -208,7 +230,8 @@ pub(crate) fn render_struct_fields<'a, S: BuildHasher>(
             let field_str = format!(".{} ", field_name);
             let left_width = 11 + indent.len() + field_str.len() + 2; // +2 for ": "
             let type_width = type_annotation.len();
-            let padding = ctx.content_width.saturating_sub(left_width + type_width);
+            let padding =
+                ctx.content_width.saturating_sub(left_width + type_width);
 
             let mut spans = vec![
                 field_addr_span,
@@ -242,14 +265,18 @@ pub(crate) fn render_struct_fields<'a, S: BuildHasher>(
             }
         } else {
             // Non-struct field - render as a single line
-            let val_spans = format_value_styled(field_value, ctx.struct_defs, 1);
+            let val_spans =
+                format_value_styled(field_value, ctx.struct_defs, 1);
 
             // Calculate padding for right-alignment
             let field_str = format!(".{} ", field_name);
-            let val_width: usize = val_spans.iter().map(|s| s.content.len()).sum();
-            let left_width = 11 + indent.len() + field_str.len() + 2 + val_width; // +2 for ": "
+            let val_width: usize =
+                val_spans.iter().map(|s| s.content.len()).sum();
+            let left_width =
+                11 + indent.len() + field_str.len() + 2 + val_width; // +2 for ": "
             let type_width = type_annotation.len();
-            let padding = ctx.content_width.saturating_sub(left_width + type_width);
+            let padding =
+                ctx.content_width.saturating_sub(left_width + type_width);
 
             let mut spans = vec![
                 field_addr_span,

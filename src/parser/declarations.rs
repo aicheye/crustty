@@ -24,7 +24,9 @@ use crate::parser::parse::{ParseError, Parser};
 
 impl Parser {
     /// Parse a top-level declaration (function or struct definition)
-    pub(crate) fn parse_top_level_declaration(&mut self) -> Result<AstNode, ParseError> {
+    pub(crate) fn parse_top_level_declaration(
+        &mut self,
+    ) -> Result<AstNode, ParseError> {
         // Check for struct definition vs function with struct return type
         // We need to distinguish:
         //   struct Name { ... };           <- struct definition
@@ -62,7 +64,9 @@ impl Parser {
     }
 
     /// Parse struct definition: struct Name { fields };
-    pub(crate) fn parse_struct_definition(&mut self) -> Result<AstNode, ParseError> {
+    pub(crate) fn parse_struct_definition(
+        &mut self,
+    ) -> Result<AstNode, ParseError> {
         let loc = self.previous_location();
 
         let name = self.expect_identifier()?;
@@ -92,7 +96,9 @@ impl Parser {
     }
 
     /// Parse function definition: type name(params) { body }
-    pub(crate) fn parse_function_definition(&mut self) -> Result<AstNode, ParseError> {
+    pub(crate) fn parse_function_definition(
+        &mut self,
+    ) -> Result<AstNode, ParseError> {
         let return_type = self.parse_type()?;
         let name = self.expect_identifier()?;
         let loc = self.previous_location();
@@ -118,7 +124,9 @@ impl Parser {
     }
 
     /// Parse parameter list: (type name, type name, ...)
-    pub(crate) fn parse_parameter_list(&mut self) -> Result<Vec<Param>, ParseError> {
+    pub(crate) fn parse_parameter_list(
+        &mut self,
+    ) -> Result<Vec<Param>, ParseError> {
         let mut params = Vec::new();
 
         if self.check(&Token::RParen(self.current_location())) {
@@ -147,7 +155,7 @@ impl Parser {
         Ok(params)
     }
 
-    /// Parse type: [const] base_type [*]* [[size]]*
+    /// Parse type: `[const]` base\_type `[*]*` `[[size]]*`
     pub(crate) fn parse_type(&mut self) -> Result<Type, ParseError> {
         let mut is_const = false;
         if self.match_token(&Token::Const(self.current_location())) {
@@ -190,7 +198,8 @@ impl Parser {
                     array_dims.push(Some(n as usize));
                 } else {
                     return Err(ParseError {
-                        message: "Array size must be a constant integer".to_string(),
+                        message: "Array size must be a constant integer"
+                            .to_string(),
                         location: self.current_location(),
                     });
                 }

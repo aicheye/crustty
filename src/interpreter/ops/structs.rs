@@ -20,19 +20,20 @@ impl Interpreter {
         }
 
         let struct_def =
-            self.struct_defs
-                .get(struct_name)
-                .ok_or_else(|| RuntimeError::StructNotDefined {
+            self.struct_defs.get(struct_name).ok_or_else(|| {
+                RuntimeError::StructNotDefined {
                     name: struct_name.to_string(),
                     location,
-                })?;
+                }
+            })?;
 
         let mut offset = 0;
         for field in &struct_def.fields {
             if field.name == field_name {
                 // Cache the result before returning
                 let field_type = field.field_type.clone();
-                let cache_key = (struct_name.to_string(), field_name.to_string());
+                let cache_key =
+                    (struct_name.to_string(), field_name.to_string());
                 self.field_info_cache
                     .insert(cache_key, (offset, field_type));
                 return Ok(offset);

@@ -13,6 +13,14 @@ repos:
       - id: check-toml
       - id: check-merge-conflict
       - id: mixed-line-ending
+      - id: check-added-large-files
+
+  # Markdown formatting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.42.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix']
 
   # Rust formatting
   - repo: local
@@ -44,6 +52,14 @@ repos:
       - id: cargo-check
         name: cargo check
         entry: cargo check --all-targets --all-features
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # Check cargo docs
+      - id: cargo-doc
+        name: cargo doc
+        entry: cargo doc --no-deps --all-features
         language: system
         types: [rust]
         pass_filenames: false

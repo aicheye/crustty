@@ -88,50 +88,65 @@ The binary will be available at `target/release/crustty`.
 
 The codebase is organized into focused modules for maintainability:
 
-```
+```markdown
 src/
-├── main.rs                     # Entry point and CLI
-├── lib.rs                      # Library root
+├── main.rs                     # Entry point and CLI argument handling
+├── lib.rs                      # Library root and public API
 │
 ├── parser/                     # C parser (source → AST)
-│   ├── mod.rs                  # Module documentation
-│   ├── lexer.rs                # Tokenization
-│   ├── parse.rs                # Parser coordinator
+│   ├── mod.rs                  # Module overview
+│   ├── lexer.rs                # Tokenizer: source text → Token stream
+│   ├── parse.rs                # Parser entry point (Parser struct)
 │   ├── declarations.rs         # Struct/function declaration parsing
 │   ├── statements.rs           # Statement parsing
-│   ├── expressions.rs          # Expression parsing with precedence
-│   └── ast.rs                  # AST node definitions
+│   ├── expressions.rs          # Expression parsing with precedence climbing
+│   └── ast.rs                  # AST node type definitions
 │
-├── interpreter/                # C interpreter (AST execution)
-│   ├── mod.rs                  # Module documentation
-│   ├── engine.rs               # Core interpreter and execution loop
-│   ├── statements.rs           # Statement execution
-│   ├── expressions.rs          # Expression evaluation
-│   ├── builtins.rs             # Built-in functions (printf, malloc, free)
-│   ├── memory_ops.rs           # Memory operations and struct field access
-│   ├── type_system.rs          # Type inference
-│   ├── errors.rs               # Runtime error types
-│   └── constants.rs            # Address spaces and limits
+├── interpreter/                # C interpreter (AST → execution)
+│   ├── mod.rs                  # Module overview and execution model docs
+│   ├── engine.rs               # Interpreter struct, run(), rewind(), snapshots
+│   ├── statements.rs           # Statement dispatch (if, while, decl, …)
+│   ├── expressions.rs          # Expression evaluation (largest file)
+│   ├── builtins.rs             # Built-in functions (printf, scanf, malloc, free)
+│   ├── type_system.rs          # Type inference helpers
+│   ├── loops.rs                # while / do-while / for loop execution
+│   ├── jumps.rs                # return / switch execution
+│   ├── heap_serial.rs          # Value ↔ heap byte serialization
+│   ├── errors.rs               # RuntimeError enum
+│   ├── constants.rs            # Address-space constants
+│   └── ops/                    # Operator implementations (impl Interpreter)
+│       ├── mod.rs              # Submodule declarations
+│       ├── binary.rs           # Arithmetic, comparison, bitwise, compound-assign
+│       ├── unary.rs            # Negation, NOT, increment/decrement
+│       ├── assign.rs           # Assignment to lvalues
+│       ├── access.rs           # Reading lvalues and resolving addresses
+│       └── structs.rs          # Struct initialization and field-offset helpers
 │
-├── memory/                     # Memory management
-│   ├── stack.rs                # Call stack implementation
-│   ├── heap.rs                 # Heap allocator
-│   └── value.rs                # Value representation
+├── memory/                     # Runtime memory model
+│   ├── mod.rs                  # sizeof, pointer arithmetic helpers
+│   ├── stack.rs                # Call frames and local variables
+│   ├── heap.rs                 # First-fit heap allocator
+│   └── value.rs                # Value enum (Int, Char, Pointer, Struct, …)
 │
 ├── snapshot/                   # Time-travel debugging
-│   └── mod.rs                  # Snapshot management
+│   └── mod.rs                  # Snapshot, SnapshotManager, MockTerminal
 │
-└── ui/                         # Terminal UI (ratatui)
-    ├── app.rs                  # Application state and event loop
-    ├── theme.rs                # Color scheme
-    └── panes/                  # TUI pane rendering
-        ├── mod.rs              # Pane module organization
-        ├── source.rs           # Source code pane
-        ├── stack.rs            # Stack visualization pane
-        ├── heap.rs             # Heap visualization pane
-        ├── terminal.rs         # Terminal output pane
-        ├── status.rs           # Status bar
-        └── utils.rs            # Shared rendering utilities
+└── ui/                         # Terminal UI (ratatui + crossterm)
+    ├── mod.rs                  # Module re-exports
+    ├── app.rs                  # App struct, event loop, pane focus, scanf input
+    ├── theme.rs                # Color palette (DEFAULT_THEME)
+    └── panes/                  # Stateless pane render functions
+        ├── mod.rs              # Re-exports for all pane modules
+        ├── source.rs           # Syntax-highlighted source code pane
+        ├── stack.rs            # Call stack visualization pane
+        ├── heap.rs             # Heap block visualization pane
+        ├── terminal.rs         # printf / scanf terminal output pane
+        ├── status.rs           # Status bar (keybindings, step counter)
+        └── utils/              # Shared rendering helpers
+            ├── mod.rs          # Re-exports from submodules
+            ├── formatting.rs   # Value/address formatting
+            ├── memory.rs       # Stack/heap data extraction helpers
+            └── rendering.rs    # Low-level ratatui span/line builders
 ```
 
 ## Architecture
@@ -139,6 +154,7 @@ src/
 ### Parser
 
 Hand-written recursive descent parser with:
+
 - Precedence climbing for binary operators
 - Comprehensive error reporting with source locations
 - Full AST representation of program structure
@@ -146,23 +162,31 @@ Hand-written recursive descent parser with:
 ### Interpreter
 
 Executes the AST with:
+
 - Stack-based execution with call frames
 - Heap memory allocator with block tracking
 - Snapshot system capturing execution state after each statement
 - Specific error types for clear diagnostics
 
+The interpreter code is split across focused submodules: `engine.rs` owns the core
+loop and public API; operator evaluation lives under `ops/`; loop control flow in
+`loops.rs`; jump-style control flow (`return`, `switch`) in `jumps.rs`; and heap
+serialization in `heap_serial.rs`.
+
 ### Memory Model
 
 - **Stack**: Local variables, function parameters, return addresses
-  - Address space: `0x7fff_0000` and up
-  - Grows downward on function calls
+  - Address space: `0x0000_0004` and up (sequential variable IDs per frame)
 - **Heap**: Dynamic allocations via `malloc`
-  - Address space: `0x0000_1000` and up
+  - Address space: `0x7fff_0000` and up
   - First-fit allocation strategy
+
+The two regions occupy non-overlapping address ranges so the TUI can distinguish stack and heap pointers without type annotation, and pointer arithmetic can be range-checked cheaply.
 
 ### Time-Travel Debugging
 
 The interpreter maintains a history of execution snapshots, each containing:
+
 - Complete stack state
 - Complete heap state
 - Terminal output

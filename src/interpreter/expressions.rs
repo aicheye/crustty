@@ -29,8 +29,12 @@ use crate::parser::ast::*;
 
 impl Interpreter {
     /// Evaluate an expression and return its value
-    pub(crate) fn evaluate_expr(&mut self, expr: &AstNode) -> Result<Value, RuntimeError> {
-        let location = Self::get_location(expr).unwrap_or(self.current_location);
+    pub(crate) fn evaluate_expr(
+        &mut self,
+        expr: &AstNode,
+    ) -> Result<Value, RuntimeError> {
+        let location =
+            Self::get_location(expr).unwrap_or(self.current_location);
 
         match expr {
             AstNode::IntLiteral(n, _) => Ok(Value::Int(*n)),
@@ -40,12 +44,12 @@ impl Interpreter {
             AstNode::StringLiteral(s, loc) => {
                 let bytes = s.as_bytes();
                 let addr =
-                    self.heap
-                        .allocate(bytes.len() + 1)
-                        .map_err(|_| RuntimeError::OutOfMemory {
+                    self.heap.allocate(bytes.len() + 1).map_err(|_| {
+                        RuntimeError::OutOfMemory {
                             requested: bytes.len() + 1,
                             limit: self.heap.max_size(),
-                        })?;
+                        }
+                    })?;
 
                 for (i, &byte) in bytes.iter().enumerate() {
                     self.heap
@@ -89,7 +93,8 @@ impl Interpreter {
                     Ok(Value::Int(0))
                 } else {
                     let right_val = self.evaluate_expr(right)?;
-                    let right_bool = Self::value_to_bool(&right_val, *location)?;
+                    let right_bool =
+                        Self::value_to_bool(&right_val, *location)?;
                     Ok(Value::Int(if right_bool { 1 } else { 0 }))
                 }
             }
@@ -105,7 +110,8 @@ impl Interpreter {
                     Ok(Value::Int(1))
                 } else {
                     let right_val = self.evaluate_expr(right)?;
-                    let right_bool = Self::value_to_bool(&right_val, *location)?;
+                    let right_bool =
+                        Self::value_to_bool(&right_val, *location)?;
                     Ok(Value::Int(if right_bool { 1 } else { 0 }))
                 }
             }

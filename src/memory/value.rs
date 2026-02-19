@@ -1,4 +1,3 @@
-#![allow(dead_code)] // Complete API module, not all methods currently used
 //! Runtime value representation
 //!
 //! This module defines the [`Value`] enum, which represents all possible runtime values
@@ -19,7 +18,7 @@
 //! The `Uninitialized` variant enables detection of reads from uninitialized memory,
 //! a common source of undefined behavior in C.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 /// Runtime values in the interpreter
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -28,7 +27,7 @@ pub enum Value {
     Char(i8),
     Pointer(Address),
     Null,
-    Struct(HashMap<String, Value>), // Field name -> field value
+    Struct(FxHashMap<String, Value>), // Field name -> field value
     Array(Vec<Value>),
     #[default]
     Uninitialized, // Special marker for uninitialized memory
