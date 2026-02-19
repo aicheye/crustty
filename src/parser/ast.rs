@@ -59,6 +59,16 @@ impl Type {
         self.array_dims.push(size);
         self
     }
+
+    /// Returns the type of one element of an array (strips outermost dimension).
+    pub fn element_type(&self) -> Self {
+        Type {
+            base: self.base.clone(),
+            is_const: self.is_const,
+            pointer_depth: self.pointer_depth,
+            array_dims: self.array_dims[1..].to_vec(),
+        }
+    }
 }
 
 /// Binary operators
