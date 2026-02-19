@@ -24,6 +24,7 @@ use crate::interpreter::engine::{ControlFlow, Interpreter};
 use crate::interpreter::errors::RuntimeError;
 use crate::memory::{sizeof_type, value::Value};
 use crate::parser::ast::*;
+use rustc_hash::FxHashMap;
 
 impl Interpreter {
     pub(crate) fn execute_var_decl(
@@ -43,7 +44,8 @@ impl Interpreter {
             // Evaluate the initializer
             let val = self.evaluate_expr(init_expr)?;
             // Coerce the value to match the declared type
-            let coerced_val = self.coerce_value_to_type(val, var_type, location)?;
+            let coerced_val =
+                self.coerce_value_to_type(val, var_type, location)?;
             (
                 crate::memory::stack::InitState::Initialized,
                 Some(coerced_val),
@@ -55,7 +57,8 @@ impl Interpreter {
                 // Initialize array with uninitialized values
                 let size = var_type.array_dims[0].unwrap_or(0);
                 let default_element = Value::Uninitialized;
-                let elements: Vec<Value> = (0..size).map(|_| default_element.clone()).collect();
+                let elements: Vec<Value> =
+                    (0..size).map(|_| default_element.clone()).collect();
                 (
                     crate::memory::stack::InitState::Uninitialized,
                     Some(Value::Array(elements)),
@@ -65,17 +68,20 @@ impl Interpreter {
                 match &var_type.base {
                     BaseType::Struct(_struct_name) => {
                         // Helper function to create default value for a type
-                        fn create_default_value<S: std::hash::BuildHasher>(
+                        fn create_default_value(
                             type_: &Type,
-                            struct_defs: &std::collections::HashMap<String, StructDef, S>,
+                            struct_defs: &FxHashMap<String, StructDef>,
                         ) -> Value {
                             if !type_.array_dims.is_empty() {
                                 let size = type_.array_dims[0].unwrap_or(0);
                                 let element_type = type_.element_type();
-                                let default_element =
-                                    create_default_value(&element_type, struct_defs);
-                                let elements: Vec<Value> =
-                                    (0..size).map(|_| default_element.clone()).collect();
+                                let default_element = create_default_value(
+                                    &element_type,
+                                    struct_defs,
+                                );
+                                let elements: Vec<Value> = (0..size)
+                                    .map(|_| default_element.clone())
+                                    .collect();
                                 return Value::Array(elements);
                             }
 
@@ -88,7 +94,7 @@ impl Interpreter {
                                 BaseType::Char => Value::Char(0),
                                 BaseType::Void => Value::Uninitialized,
                                 BaseType::Struct(name) => {
-                                    let mut fields = std::collections::HashMap::new();
+                                    let mut fields = FxHashMap::default();
                                     if let Some(def) = struct_defs.get(name) {
                                         for field in &def.fields {
                                             fields.insert(
@@ -105,7 +111,8 @@ impl Interpreter {
                             }
                         }
 
-                        let default_struct = create_default_value(var_type, &self.struct_defs);
+                        let default_struct =
+                            create_default_value(var_type, &self.struct_defs);
 
                         // Mark as initialized
                         (
@@ -133,7 +140,12 @@ impl Interpreter {
 
         // Now declare the variable
         let frame = self.stack.current_frame_mut().unwrap();
-        frame.declare_var(name.to_string(), var_type.clone(), init_state, address);
+        frame.declare_var(
+            name.to_string(),
+            var_type.clone(),
+            init_state,
+            address,
+        );
 
         // Set the value if we have one
         if let Some(val) = value {
@@ -180,14 +192,27 @@ impl Interpreter {
         let lhs_val = self.evaluate_expr(lhs)?;
 
         let result_val = match op {
-            BinOp::AddAssign => self.checked_add_values(&lhs_val, &rhs_val, location)?,
-            BinOp::SubAssign => self.checked_sub_values(&lhs_val, &rhs_val, location)?,
-            BinOp::MulAssign => self.checked_mul_values(&lhs_val, &rhs_val, location)?,
-            BinOp::DivAssign => self.checked_div_values(&lhs_val, &rhs_val, location)?,
-            BinOp::ModAssign => self.checked_mod_values(&lhs_val, &rhs_val, location)?,
+            BinOp::AddAssign => {
+                self.checked_add_values(&lhs_val, &rhs_val, location)?
+            }
+            BinOp::SubAssign => {
+                self.checked_sub_values(&lhs_val, &rhs_val, location)?
+            }
+            BinOp::MulAssign => {
+                self.checked_mul_values(&lhs_val, &rhs_val, location)?
+            }
+            BinOp::DivAssign => {
+                self.checked_div_values(&lhs_val, &rhs_val, location)?
+            }
+            BinOp::ModAssign => {
+                self.checked_mod_values(&lhs_val, &rhs_val, location)?
+            }
             _ => {
                 return Err(RuntimeError::UnsupportedOperation {
-                    message: format!("Unsupported compound assignment operator: {:?}", op),
+                    message: format!(
+                        "Unsupported compound assignment operator: {:?}",
+                        op
+                    ),
                     location,
                 });
             }
@@ -196,7 +221,10 @@ impl Interpreter {
         self.assign_to_lvalue(lhs, result_val, location)
     }
 
-    fn execute_branch(&mut self, stmts: &[AstNode]) -> Result<(), RuntimeError> {
+    fn execute_branch(
+        &mut self,
+        stmts: &[AstNode],
+    ) -> Result<(), RuntimeError> {
         self.enter_scope();
         for stmt in stmts {
             let needs_snapshot = self.execute_statement(stmt)?;
@@ -257,12 +285,13 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         self.snapshot_at(location)?;
 
-        let func_def = self.function_defs.get(name).cloned().ok_or_else(|| {
-            RuntimeError::UndefinedFunction {
-                name: name.to_string(),
-                location,
-            }
-        })?;
+        let func_def =
+            self.function_defs.get(name).cloned().ok_or_else(|| {
+                RuntimeError::UndefinedFunction {
+                    name: name.to_string(),
+                    location,
+                }
+            })?;
 
         if args.len() != func_def.params.len() {
             return Err(RuntimeError::ArgumentCountMismatch {

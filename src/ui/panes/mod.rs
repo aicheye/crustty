@@ -10,7 +10,7 @@
 //! - [`heap`]: Heap memory display with allocation tracking and hex dumps
 //! - [`terminal`]: Terminal output from `printf` and other output functions
 //! - [`status`]: Status bar with keybindings and execution state
-//! - [`utils`]: Shared utility functions for value formatting and rendering
+//! - `utils`: Shared utility functions for value formatting and rendering
 //!
 //! # Architecture
 //!
@@ -32,7 +32,9 @@ pub mod terminal;
 
 // Re-export render functions for convenience
 pub use heap::{render_heap_pane, HeapRenderData, HeapScrollState};
-pub use source::{render_source_pane, SourceScrollState};
+pub use source::{render_source_pane, SourceRenderData, SourceScrollState};
 pub use stack::{render_stack_pane, StackRenderData, StackScrollState};
-pub use status::render_status_bar;
-pub use terminal::render_terminal_pane;
+pub use status::{render_status_bar, StatusRenderData};
+pub use terminal::{
+    render_terminal_pane, TerminalRenderData, TerminalScrollState,
+};

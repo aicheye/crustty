@@ -34,7 +34,7 @@ use rustc_hash::FxHashMap;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub enum ControlFlow {
+pub(crate) enum ControlFlow {
     #[default]
     Normal,
     Break,
@@ -200,7 +200,9 @@ impl Interpreter {
             match self.execute_statement(stmt) {
                 Ok(needs_snapshot) => {
                     // Only snapshot if we're continuing normal execution
-                    if matches!(self.control_flow, ControlFlow::Normal) && needs_snapshot {
+                    if matches!(self.control_flow, ControlFlow::Normal)
+                        && needs_snapshot
+                    {
                         if let Err(e) = self.take_snapshot() {
                             self.last_runtime_error = Some(e.clone());
                             return Err(e);
@@ -251,7 +253,8 @@ impl Interpreter {
         self.stack = Stack::new();
         self.heap = Heap::default();
         self.terminal = MockTerminal::new();
-        self.snapshot_manager = SnapshotManager::new(self.snapshot_memory_limit);
+        self.snapshot_manager =
+            SnapshotManager::new(self.snapshot_memory_limit);
         self.history_position = 0;
         self.execution_depth = 0;
         self.control_flow = ControlFlow::Normal;
@@ -270,16 +273,21 @@ impl Interpreter {
     /// to the shared stdin queue (consumed across all scanf calls). The program is re-executed
     /// with all accumulated tokens. After this call the interpreter is positioned at the
     /// snapshot just after the scanf.
-    pub fn provide_scanf_input(&mut self, input: String) -> Result<(), RuntimeError> {
+    pub fn provide_scanf_input(
+        &mut self,
+        input: String,
+    ) -> Result<(), RuntimeError> {
         let position_before = self.history_position;
-        let new_tokens: Vec<String> = input.split_whitespace().map(|s| s.to_string()).collect();
+        let new_tokens: Vec<String> =
+            input.split_whitespace().map(|s| s.to_string()).collect();
         self.stdin_tokens.extend(new_tokens);
         self.reset_for_rerun();
         self.run()?;
         // Navigate to the post-scanf snapshot.  position_before is the index of
         // the "at-scanf" snapshot (taken just before pausing); after rerun that
         // same index holds the completed-scanf state.
-        let target = position_before.min(self.snapshot_manager.len().saturating_sub(1));
+        let target =
+            position_before.min(self.snapshot_manager.len().saturating_sub(1));
         if let Some(snapshot) = self.snapshot_manager.get(target).cloned() {
             self.restore_snapshot(&snapshot);
         }
@@ -297,7 +305,10 @@ impl Interpreter {
     }
 
     /// Helper to take a snapshot at a specific location
-    pub(crate) fn snapshot_at(&mut self, location: SourceLocation) -> Result<(), RuntimeError> {
+    pub(crate) fn snapshot_at(
+        &mut self,
+        location: SourceLocation,
+    ) -> Result<(), RuntimeError> {
         self.current_location = location;
         self.take_snapshot()
     }
@@ -337,7 +348,10 @@ impl Interpreter {
 
     /// Execute a single statement
     /// Returns true if a snapshot should be taken after this statement
-    pub(crate) fn execute_statement(&mut self, stmt: &AstNode) -> Result<bool, RuntimeError> {
+    pub(crate) fn execute_statement(
+        &mut self,
+        stmt: &AstNode,
+    ) -> Result<bool, RuntimeError> {
         // If searching for a goto label, skip statements until we find the target
         if let ControlFlow::Goto(ref target) = self.control_flow {
             if let AstNode::Label { name, location } = stmt {
@@ -362,7 +376,12 @@ impl Interpreter {
                 init,
                 location,
             } => {
-                self.execute_var_decl(name, var_type, init.as_deref(), *location)?;
+                self.execute_var_decl(
+                    name,
+                    var_type,
+                    init.as_deref(),
+                    *location,
+                )?;
                 Ok(true)
             }
 
@@ -522,12 +541,12 @@ impl Interpreter {
             execution_depth: self.execution_depth,
         };
 
-        self.snapshot_manager
-            .push(snapshot)
-            .map_err(|_| RuntimeError::SnapshotLimitExceeded {
+        self.snapshot_manager.push(snapshot).map_err(|_| {
+            RuntimeError::SnapshotLimitExceeded {
                 current: self.snapshot_manager.memory_usage(),
                 limit: self.snapshot_manager.memory_limit(),
-            })?;
+            }
+        })?;
 
         self.history_position += 1;
         Ok(())
@@ -558,7 +577,8 @@ impl Interpreter {
 
         self.history_position -= 1;
 
-        if let Some(snapshot) = self.snapshot_manager.get(self.history_position) {
+        if let Some(snapshot) = self.snapshot_manager.get(self.history_position)
+        {
             let snapshot = snapshot.clone();
             self.restore_snapshot(&snapshot);
             Ok(())
@@ -572,7 +592,9 @@ impl Interpreter {
 
     /// Step forward in execution (restore next snapshot if available)
     pub fn step_forward(&mut self) -> Result<(), RuntimeError> {
-        if let Some(snapshot) = self.snapshot_manager.get(self.history_position + 1) {
+        if let Some(snapshot) =
+            self.snapshot_manager.get(self.history_position + 1)
+        {
             self.history_position += 1;
             let snapshot = snapshot.clone();
             self.restore_snapshot(&snapshot);
@@ -592,7 +614,9 @@ impl Interpreter {
         let starting_depth = self.execution_depth;
 
         loop {
-            if let Some(snapshot) = self.snapshot_manager.get(self.history_position + 1) {
+            if let Some(snapshot) =
+                self.snapshot_manager.get(self.history_position + 1)
+            {
                 self.history_position += 1;
                 let snapshot = snapshot.clone();
                 self.restore_snapshot(&snapshot);
@@ -661,12 +685,12 @@ impl Interpreter {
                 .frames()
                 .get(*frame_depth)
                 .ok_or(RuntimeError::InvalidFrameDepth { location })?;
-            let var = frame
-                .get_var(var_name)
-                .ok_or_else(|| RuntimeError::UndefinedVariable {
+            let var = frame.get_var(var_name).ok_or_else(|| {
+                RuntimeError::UndefinedVariable {
                     name: var_name.clone(),
                     location,
-                })?;
+                }
+            })?;
 
             let size = sizeof_type(&var.var_type, &self.struct_defs) as u64;
 
@@ -762,7 +786,10 @@ impl Interpreter {
     /// Convert a heap string error into the appropriate RuntimeError variant.
     /// Detects use-after-free errors and produces `RuntimeError::UseAfterFree`
     /// instead of the generic `InvalidMemoryOperation`.
-    pub(crate) fn map_heap_error(error: String, location: SourceLocation) -> RuntimeError {
+    pub(crate) fn map_heap_error(
+        error: String,
+        location: SourceLocation,
+    ) -> RuntimeError {
         if let Some(uaf_pos) = error.find("Use-after-free: address 0x") {
             // Parse address from "Use-after-free: address 0x{hex} has been freed"
             let hex_start = uaf_pos + "Use-after-free: address 0x".len();
@@ -784,11 +811,18 @@ impl Interpreter {
     }
 }
 
-/// Helper struct for function definitions
+/// Represents a parsed C function, stored by the interpreter after its initial scan of the AST.
+///
+/// Functions are indexed into [`Interpreter::function_defs`] before execution begins, allowing
+/// forward references (functions can call functions defined later in the file).
 #[derive(Clone, Debug)]
 pub struct FunctionDef {
+    /// Formal parameters in declaration order.
     pub params: Vec<Param>,
+    /// Statement body of the function.
     pub body: Vec<AstNode>,
+    /// Declared return type.
     pub return_type: Type,
-    pub(crate) location: SourceLocation,
+    /// Source location of the opening brace (used for stepping into the function).
+    pub location: SourceLocation,
 }

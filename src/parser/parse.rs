@@ -7,9 +7,9 @@
 //!
 //! The Parser uses a recursive descent approach with the following organization:
 //! - This module: Parser struct, helper methods, and coordination
-//! - [`super::declarations`]: Parsing struct and function declarations
-//! - [`super::statements`]: Parsing statements (if, while, for, etc.)
-//! - [`super::expressions`]: Parsing expressions with precedence climbing
+//! - `declarations`: Parsing struct and function declarations
+//! - `statements`: Parsing statements (if, while, for, etc.)
+//! - `expressions`: Parsing expressions with precedence climbing
 //!
 //! # Implementation
 //!
@@ -83,12 +83,18 @@ impl Parser {
     pub(crate) fn is_type_keyword(&self) -> bool {
         matches!(
             self.peek_token(),
-            Token::Int(_) | Token::Char(_) | Token::Void(_) | Token::Struct(_) | Token::Const(_)
+            Token::Int(_)
+                | Token::Char(_)
+                | Token::Void(_)
+                | Token::Struct(_)
+                | Token::Const(_)
         )
     }
 
     pub(crate) fn match_token(&mut self, token: &Token) -> bool {
-        if std::mem::discriminant(&self.peek_token()) == std::mem::discriminant(token) {
+        if std::mem::discriminant(&self.peek_token())
+            == std::mem::discriminant(token)
+        {
             self.advance();
             true
         } else {
@@ -97,7 +103,8 @@ impl Parser {
     }
 
     pub(crate) fn check(&self, token: &Token) -> bool {
-        std::mem::discriminant(&self.peek_token()) == std::mem::discriminant(token)
+        std::mem::discriminant(&self.peek_token())
+            == std::mem::discriminant(token)
     }
 
     pub(crate) fn advance(&mut self) -> &Token {
@@ -135,7 +142,11 @@ impl Parser {
         self.peek().location()
     }
 
-    pub(crate) fn expect_token(&mut self, token: &Token, message: &str) -> Result<(), ParseError> {
+    pub(crate) fn expect_token(
+        &mut self,
+        token: &Token,
+        message: &str,
+    ) -> Result<(), ParseError> {
         if self.check(token) {
             self.advance();
             Ok(())
@@ -147,35 +158,50 @@ impl Parser {
         }
     }
 
-    pub(crate) fn expect_lparen(&mut self, ctx: &str) -> Result<(), ParseError> {
+    pub(crate) fn expect_lparen(
+        &mut self,
+        ctx: &str,
+    ) -> Result<(), ParseError> {
         self.expect_token(
             &Token::LParen(self.current_location()),
             &format!("Expected '(' {ctx}"),
         )
     }
 
-    pub(crate) fn expect_rparen(&mut self, ctx: &str) -> Result<(), ParseError> {
+    pub(crate) fn expect_rparen(
+        &mut self,
+        ctx: &str,
+    ) -> Result<(), ParseError> {
         self.expect_token(
             &Token::RParen(self.current_location()),
             &format!("Expected ')' {ctx}"),
         )
     }
 
-    pub(crate) fn expect_lbrace(&mut self, ctx: &str) -> Result<(), ParseError> {
+    pub(crate) fn expect_lbrace(
+        &mut self,
+        ctx: &str,
+    ) -> Result<(), ParseError> {
         self.expect_token(
             &Token::LBrace(self.current_location()),
             &format!("Expected '{{' {ctx}"),
         )
     }
 
-    pub(crate) fn expect_rbrace(&mut self, ctx: &str) -> Result<(), ParseError> {
+    pub(crate) fn expect_rbrace(
+        &mut self,
+        ctx: &str,
+    ) -> Result<(), ParseError> {
         self.expect_token(
             &Token::RBrace(self.current_location()),
             &format!("Expected '}}' {ctx}"),
         )
     }
 
-    pub(crate) fn expect_semicolon(&mut self, ctx: &str) -> Result<(), ParseError> {
+    pub(crate) fn expect_semicolon(
+        &mut self,
+        ctx: &str,
+    ) -> Result<(), ParseError> {
         self.expect_token(
             &Token::Semicolon(self.current_location()),
             &format!("Expected ';' {ctx}"),

@@ -9,19 +9,23 @@ use ratatui::{
     Frame,
 };
 
+/// Data needed to render the status bar
+pub struct StatusRenderData<'a> {
+    pub message: &'a str,
+    pub current_step: usize,
+    pub total_steps: Option<usize>,
+    pub error_state: Option<&'a crate::ui::app::ErrorState>,
+    pub is_playing: bool,
+    pub is_scanf_input: bool,
+}
+
 /// Render the status bar at the bottom.
 ///
 /// `total_steps` is `None` when execution is paused at a scanf (total unknown).
-#[allow(clippy::too_many_arguments)]
 pub fn render_status_bar(
     frame: &mut Frame,
     area: Rect,
-    message: &str,
-    current_step: usize,
-    total_steps: Option<usize>,
-    error_state: Option<&crate::ui::app::ErrorState>,
-    is_playing: bool,
-    is_scanf_input: bool,
+    data: StatusRenderData,
 ) {
     // Split status bar into left and right
     let layout = ratatui::layout::Layout::default()
@@ -33,22 +37,22 @@ pub fn render_status_bar(
         .split(area);
 
     // Left side: Step info and status
-    let step_text = if error_state.is_some() {
-        format!(" Step {}/? ", current_step + 1)
-    } else if let Some(total) = total_steps {
-        format!(" Step {}/{} ", current_step + 1, total)
+    let step_text = if data.error_state.is_some() {
+        format!(" Step {}/? ", data.current_step + 1)
+    } else if let Some(total) = data.total_steps {
+        format!(" Step {}/{} ", data.current_step + 1, total)
     } else {
         // paused at scanf — total is unknown
-        format!(" Step {}/? ", current_step + 1)
+        format!(" Step {}/? ", data.current_step + 1)
     };
 
     let left_spans = vec![
         Span::styled(
             step_text,
             Style::default()
-                .bg(if error_state.is_some() {
+                .bg(if data.error_state.is_some() {
                     DEFAULT_THEME.error
-                } else if is_scanf_input {
+                } else if data.is_scanf_input {
                     DEFAULT_THEME.secondary
                 } else {
                     DEFAULT_THEME.primary
@@ -63,14 +67,14 @@ pub fn render_status_bar(
                 .fg(DEFAULT_THEME.comment),
         ),
         Span::styled(
-            format!(" {} ", message),
-            Style::default()
-                .bg(DEFAULT_THEME.current_line_bg)
-                .fg(if error_state.is_some() {
+            format!(" {} ", data.message),
+            Style::default().bg(DEFAULT_THEME.current_line_bg).fg(
+                if data.error_state.is_some() {
                     DEFAULT_THEME.error
                 } else {
                     DEFAULT_THEME.fg
-                }),
+                },
+            ),
         ),
     ];
 
@@ -111,10 +115,12 @@ pub fn render_status_bar(
     ];
 
     // Show status indicators based on position and state
-    let is_at_start = current_step == 0;
-    let is_at_end = total_steps.is_some_and(|total| current_step + 1 >= total);
+    let is_at_start = data.current_step == 0;
+    let is_at_end = data
+        .total_steps
+        .is_some_and(|total| data.current_step + 1 >= total);
 
-    if is_scanf_input {
+    if data.is_scanf_input {
         right_spans.push(Span::styled("│", sep_style));
         right_spans.push(Span::styled(
             " ⌨ INPUT ",
@@ -123,7 +129,7 @@ pub fn render_status_bar(
                 .fg(Color::Black)
                 .add_modifier(Modifier::BOLD),
         ));
-    } else if is_playing {
+    } else if data.is_playing {
         right_spans.push(Span::styled("│", sep_style));
         right_spans.push(Span::styled(
             " ▶ PLAYING ",

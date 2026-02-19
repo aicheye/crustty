@@ -1,5 +1,8 @@
-#![allow(dead_code)] // Complete AST definition, not all variants/fields currently used
-                     // AST (Abstract Syntax Tree) definitions for the C interpreter
+//! Abstract Syntax Tree (AST) node definitions
+//!
+//! All types produced by the parser and consumed by the interpreter live here.
+//! [`AstNode`] is the central enum covering both statements and expressions;
+//! [`Program`] is the top-level container returned by the parse phase.
 
 /// Unique identifier for AST nodes, used for tracking execution position
 pub type NodeId = usize;
@@ -12,6 +15,7 @@ pub struct SourceLocation {
 }
 
 impl SourceLocation {
+    /// Create a new source location at the given line and column (1-indexed).
     pub fn new(line: usize, column: usize) -> Self {
         Self { line, column }
     }
@@ -36,6 +40,7 @@ pub struct Type {
 }
 
 impl Type {
+    /// Create a plain (non-const, non-pointer, non-array) type with the given base.
     pub fn new(base: BaseType) -> Self {
         Type {
             base,
@@ -45,16 +50,19 @@ impl Type {
         }
     }
 
+    /// Mark this type as `const`.
     pub fn with_const(mut self) -> Self {
         self.is_const = true;
         self
     }
 
+    /// Add one level of pointer indirection (`*`).
     pub fn with_pointer(mut self) -> Self {
         self.pointer_depth += 1;
         self
     }
 
+    /// Append one array dimension. `None` means an unsized dimension (e.g., `int[]` in a parameter).
     pub fn with_array(mut self, size: Option<usize>) -> Self {
         self.array_dims.push(size);
         self
@@ -350,6 +358,7 @@ pub struct Program {
 }
 
 impl Program {
+    /// Create an empty program with no top-level declarations.
     pub fn new() -> Self {
         Program::default()
     }

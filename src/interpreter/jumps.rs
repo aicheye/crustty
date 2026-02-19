@@ -1,9 +1,20 @@
+//! Jump-style control-flow statement execution (`return` and `switch`).
+//!
+//! Adds `impl Interpreter` methods for statements that transfer control
+//! non-linearly within a function. Loop-based control flow (`while`, `for`,
+//! `do-while`, `break`, `continue`) lives in [`crate::interpreter::loops`].
+
 use crate::interpreter::engine::{ControlFlow, Interpreter};
 use crate::interpreter::errors::RuntimeError;
 use crate::memory::value::Value;
 use crate::parser::ast::{AstNode, CaseNode, SourceLocation};
 
 impl Interpreter {
+    /// Executes a `return` statement, capturing a snapshot at the return site.
+    ///
+    /// If an expression is provided its value is stored in `self.return_value`;
+    /// otherwise `return_value` is cleared (void return). Sets `control_flow` to
+    /// [`ControlFlow::Return`] so callers unwind the statement loop.
     pub(crate) fn execute_return(
         &mut self,
         expr: Option<&AstNode>,
@@ -21,6 +32,12 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Executes a `switch` statement.
+    ///
+    /// Evaluates the switch expression, then scans the case list for a matching
+    /// value (using [`Self::values_equal`]). Falls through to the `default` case
+    /// if present and no value matched. Executes cases sequentially with
+    /// fall-through semantics until a `break` (or end of case list) is reached.
     pub(crate) fn execute_switch(
         &mut self,
         expr: &AstNode,
@@ -92,13 +109,18 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Returns `true` if two [`Value`]s compare equal by C semantics.
+    ///
+    /// `NULL` compares equal to `Pointer(0)` and to itself.
+    /// Values of incompatible types (e.g. `Int` vs `Pointer`) are never equal.
     pub(crate) fn values_equal(&self, a: &Value, b: &Value) -> bool {
         match (a, b) {
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::Char(a), Value::Char(b)) => a == b,
             (Value::Pointer(a), Value::Pointer(b)) => a == b,
             (Value::Null, Value::Null) => true,
-            (Value::Null, Value::Pointer(0)) | (Value::Pointer(0), Value::Null) => true,
+            (Value::Null, Value::Pointer(0))
+            | (Value::Pointer(0), Value::Null) => true,
             _ => false,
         }
     }

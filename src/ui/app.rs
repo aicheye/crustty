@@ -60,17 +60,31 @@ impl ErrorState {
     pub fn line(&self) -> usize {
         match self {
             ErrorState::ParseError { location, .. } => location.line,
-            ErrorState::RuntimeError(err) => err.location().map(|loc| loc.line).unwrap_or(0),
+            ErrorState::RuntimeError(err) => {
+                err.location().map(|loc| loc.line).unwrap_or(0)
+            }
         }
     }
 
     /// Get the memory address if applicable (for memory-related errors)
     pub fn memory_address(&self) -> Option<u64> {
         match self {
-            ErrorState::RuntimeError(RuntimeError::UninitializedRead { address, .. }) => *address,
-            ErrorState::RuntimeError(RuntimeError::UseAfterFree { address, .. })
-            | ErrorState::RuntimeError(RuntimeError::DoubleFree { address, .. })
-            | ErrorState::RuntimeError(RuntimeError::InvalidFree { address, .. }) => Some(*address),
+            ErrorState::RuntimeError(RuntimeError::UninitializedRead {
+                address,
+                ..
+            }) => *address,
+            ErrorState::RuntimeError(RuntimeError::UseAfterFree {
+                address,
+                ..
+            })
+            | ErrorState::RuntimeError(RuntimeError::DoubleFree {
+                address,
+                ..
+            })
+            | ErrorState::RuntimeError(RuntimeError::InvalidFree {
+                address,
+                ..
+            }) => Some(*address),
             _ => None,
         }
     }
@@ -78,7 +92,9 @@ impl ErrorState {
     /// Get a human-readable error message
     pub fn message(&self) -> String {
         match self {
-            ErrorState::ParseError { message, .. } => format!("Parse Error: {}", message),
+            ErrorState::ParseError { message, .. } => {
+                format!("Parse Error: {}", message)
+            }
             ErrorState::RuntimeError(err) => format!("Runtime Error: {}", err),
         }
     }
@@ -102,7 +118,7 @@ pub struct App {
     /// Heap pane scroll state
     pub heap_scroll: super::panes::HeapScrollState,
     /// Terminal scroll offset
-    pub terminal_scroll: usize,
+    pub terminal_scroll: super::panes::TerminalScrollState,
 
     /// Whether the app should quit
     pub should_quit: bool,
@@ -145,7 +161,7 @@ impl App {
                 offset: 0,
                 prev_item_count: 0,
             },
-            terminal_scroll: 0,
+            terminal_scroll: super::panes::TerminalScrollState { offset: 0 },
             should_quit: false,
             status_message: String::from("Ready!"),
             error_state: None,
@@ -175,7 +191,8 @@ impl App {
     /// This is the case only when we are at the very last available snapshot AND
     /// the interpreter is paused waiting for user input.
     fn is_in_scanf_input_mode(&self) -> bool {
-        let at_last = self.interpreter.history_position() + 1 >= self.interpreter.total_snapshots();
+        let at_last = self.interpreter.history_position() + 1
+            >= self.interpreter.total_snapshots();
         at_last && self.interpreter.is_paused_at_scanf()
     }
 
@@ -199,7 +216,10 @@ impl App {
     }
 
     /// Run the TUI application
-    pub fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
+    pub fn run<B: Backend>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+    ) -> io::Result<()> {
         // Activate scanf mode immediately if we start paused at one
         self.check_and_activate_scanf_mode();
 
@@ -218,17 +238,24 @@ impl App {
                     if self.is_in_scanf_input_mode() {
                         self.check_and_activate_scanf_mode();
                     } else if let Some(error) = &self.error_state {
-                        self.status_message = format!("Stopped: {}", error.message());
+                        self.status_message =
+                            format!("Stopped: {}", error.message());
                     }
-                } else if self.last_play_time.elapsed() >= Duration::from_secs(1) {
+                } else if self.last_play_time.elapsed()
+                    >= Duration::from_secs(1)
+                {
                     match self.interpreter.step_forward() {
                         Ok(()) => {
                             self.status_message = "Playing...".to_string();
-                            self.terminal_scroll = usize::MAX;
+                            self.terminal_scroll.offset = usize::MAX;
                             self.check_and_activate_scanf_mode();
                         }
                         Err(e) => {
-                            if let RuntimeError::HistoryOperationFailed { message, .. } = &e {
+                            if let RuntimeError::HistoryOperationFailed {
+                                message,
+                                ..
+                            } = &e
+                            {
                                 if message == "Reached end of execution" {
                                     self.is_playing = false;
                                     self.status_message = message.clone();
@@ -236,7 +263,8 @@ impl App {
                                     return Ok(());
                                 }
                             }
-                            self.error_state = Some(ErrorState::RuntimeError(e.clone()));
+                            self.error_state =
+                                Some(ErrorState::RuntimeError(e.clone()));
                             self.is_playing = false;
                             self.status_message = format!("Error: {}", e);
                         }
@@ -272,17 +300,26 @@ impl App {
 
         let columns = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .constraints([
+                Constraint::Percentage(50),
+                Constraint::Percentage(50),
+            ])
             .split(pane_area);
 
         let left_rows = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+            .constraints([
+                Constraint::Percentage(70),
+                Constraint::Percentage(30),
+            ])
             .split(columns[0]);
 
         let right_rows = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .constraints([
+                Constraint::Percentage(50),
+                Constraint::Percentage(50),
+            ])
             .split(columns[1]);
 
         let scanf_mode = self.is_in_scanf_input_mode();
@@ -290,22 +327,26 @@ impl App {
         super::panes::render_source_pane(
             frame,
             left_rows[0],
-            &self.source_code,
-            self.interpreter.current_location().line,
-            self.error_state.as_ref().is_some(),
-            self.is_in_scanf_input_mode(),
-            self.focused_pane == FocusedPane::Source,
-            &mut self.source_scroll,
+            super::panes::SourceRenderData {
+                source_code: &self.source_code,
+                current_line: self.interpreter.current_location().line,
+                is_error: self.error_state.as_ref().is_some(),
+                is_scanf: self.is_in_scanf_input_mode(),
+                is_focused: self.focused_pane == FocusedPane::Source,
+                scroll_state: &mut self.source_scroll,
+            },
         );
 
         super::panes::render_terminal_pane(
             frame,
             left_rows[1],
-            self.interpreter.terminal(),
-            self.focused_pane == FocusedPane::Terminal,
-            &mut self.terminal_scroll,
-            scanf_mode,
-            &self.scanf_input_buffer,
+            super::panes::TerminalRenderData {
+                terminal: self.interpreter.terminal(),
+                is_focused: self.focused_pane == FocusedPane::Terminal,
+                scroll_state: &mut self.terminal_scroll,
+                is_scanf_input: scanf_mode,
+                input_buffer: &self.scanf_input_buffer,
+            },
         );
 
         super::panes::render_stack_pane(
@@ -317,10 +358,13 @@ impl App {
                 source_code: &self.source_code,
                 return_value: self.interpreter.return_value(),
                 function_defs: self.interpreter.function_defs(),
-                error_address: self.error_state.as_ref().and_then(|e| e.memory_address()),
+                error_address: self
+                    .error_state
+                    .as_ref()
+                    .and_then(|e| e.memory_address()),
+                is_focused: self.focused_pane == FocusedPane::Stack,
+                scroll_state: &mut self.stack_scroll,
             },
-            self.focused_pane == FocusedPane::Stack,
-            &mut self.stack_scroll,
         );
 
         super::panes::render_heap_pane(
@@ -330,21 +374,26 @@ impl App {
                 heap: self.interpreter.heap(),
                 pointer_types: self.interpreter.pointer_types(),
                 struct_defs: self.interpreter.struct_defs(),
-                error_address: self.error_state.as_ref().and_then(|e| e.memory_address()),
+                error_address: self
+                    .error_state
+                    .as_ref()
+                    .and_then(|e| e.memory_address()),
+                is_focused: self.focused_pane == FocusedPane::Heap,
+                scroll_state: &mut self.heap_scroll,
             },
-            self.focused_pane == FocusedPane::Heap,
-            &mut self.heap_scroll,
         );
 
         super::panes::render_status_bar(
             frame,
             status_area,
-            &self.status_message,
-            self.interpreter.history_position(),
-            self.total_steps_display(),
-            self.error_state.as_ref(),
-            self.is_playing,
-            scanf_mode,
+            super::panes::StatusRenderData {
+                message: &self.status_message,
+                current_step: self.interpreter.history_position(),
+                total_steps: self.total_steps_display(),
+                error_state: self.error_state.as_ref(),
+                is_playing: self.is_playing,
+                is_scanf_input: scanf_mode,
+            },
         );
     }
 
@@ -357,15 +406,17 @@ impl App {
                     let input = std::mem::take(&mut self.scanf_input_buffer);
                     match self.interpreter.provide_scanf_input(input) {
                         Ok(()) => {
-                            self.terminal_scroll = usize::MAX;
+                            self.terminal_scroll.offset = usize::MAX;
                             // If another scanf is immediately reached, stay in input mode
                             self.check_and_activate_scanf_mode();
                             if !self.is_in_scanf_input_mode() {
-                                self.status_message = "Input accepted".to_string();
+                                self.status_message =
+                                    "Input accepted".to_string();
                             }
                         }
                         Err(e) => {
-                            self.error_state = Some(ErrorState::RuntimeError(e.clone()));
+                            self.error_state =
+                                Some(ErrorState::RuntimeError(e.clone()));
                             self.status_message = format!("Error: {}", e);
                         }
                     }
@@ -413,8 +464,9 @@ impl App {
                         break;
                     }
                 }
-                self.status_message = format!("Stepped forward {} step(s)", stepped);
-                self.terminal_scroll = usize::MAX;
+                self.status_message =
+                    format!("Stepped forward {} step(s)", stepped);
+                self.terminal_scroll.offset = usize::MAX;
                 self.check_and_activate_scanf_mode();
             }
             KeyCode::Char('s') | KeyCode::Char('S') => {
@@ -442,43 +494,52 @@ impl App {
             KeyCode::Up => match self.focused_pane {
                 FocusedPane::Source => {
                     if let Some(row) = self.source_scroll.target_line_row {
-                        self.source_scroll.target_line_row = Some(row.saturating_add(1));
+                        self.source_scroll.target_line_row =
+                            Some(row.saturating_add(1));
                     }
                 }
                 FocusedPane::Stack => {
                     if self.stack_scroll.offset > 0 {
-                        self.stack_scroll.offset = self.stack_scroll.offset.saturating_sub(1);
+                        self.stack_scroll.offset =
+                            self.stack_scroll.offset.saturating_sub(1);
                     }
                 }
                 FocusedPane::Heap => {
                     if self.heap_scroll.offset > 0 {
-                        self.heap_scroll.offset = self.heap_scroll.offset.saturating_sub(1);
+                        self.heap_scroll.offset =
+                            self.heap_scroll.offset.saturating_sub(1);
                     }
                 }
                 FocusedPane::Terminal => {
-                    if self.terminal_scroll > 0 {
-                        self.terminal_scroll = self.terminal_scroll.saturating_sub(1);
+                    if self.terminal_scroll.offset > 0 {
+                        self.terminal_scroll.offset =
+                            self.terminal_scroll.offset.saturating_sub(1);
                     }
                 }
             },
             KeyCode::Down => match self.focused_pane {
                 FocusedPane::Source => {
                     if let Some(row) = self.source_scroll.target_line_row {
-                        self.source_scroll.target_line_row = Some(row.saturating_sub(1));
+                        self.source_scroll.target_line_row =
+                            Some(row.saturating_sub(1));
                     }
                 }
                 FocusedPane::Stack => {
-                    self.stack_scroll.offset = self.stack_scroll.offset.saturating_add(1);
+                    self.stack_scroll.offset =
+                        self.stack_scroll.offset.saturating_add(1);
                 }
                 FocusedPane::Heap => {
-                    self.heap_scroll.offset = self.heap_scroll.offset.saturating_add(1);
+                    self.heap_scroll.offset =
+                        self.heap_scroll.offset.saturating_add(1);
                 }
                 FocusedPane::Terminal => {
-                    self.terminal_scroll = self.terminal_scroll.saturating_add(1);
+                    self.terminal_scroll.offset =
+                        self.terminal_scroll.offset.saturating_add(1);
                 }
             },
             KeyCode::Char(' ') => {
-                if self.last_space_press.elapsed() >= Duration::from_millis(200) {
+                if self.last_space_press.elapsed() >= Duration::from_millis(200)
+                {
                     self.last_space_press = Instant::now();
                     self.is_playing = !self.is_playing;
                     if self.is_playing {
@@ -507,7 +568,7 @@ impl App {
                     }
                 }
                 self.status_message = "Jumped to end".to_string();
-                self.terminal_scroll = usize::MAX;
+                self.terminal_scroll.offset = usize::MAX;
                 self.check_and_activate_scanf_mode();
             }
             KeyCode::Backspace => {
@@ -519,7 +580,7 @@ impl App {
                 self.is_playing = false;
                 let _ = self.interpreter.rewind_to_start();
                 self.status_message = "Jumped to start".to_string();
-                self.terminal_scroll = usize::MAX;
+                self.terminal_scroll.offset = usize::MAX;
             }
             _ => {}
         }
@@ -535,11 +596,14 @@ impl App {
         match self.interpreter.step_forward() {
             Ok(()) => {
                 self.status_message = "Stepped forward".to_string();
-                self.terminal_scroll = usize::MAX;
+                self.terminal_scroll.offset = usize::MAX;
                 self.check_and_activate_scanf_mode();
             }
             Err(e) => {
-                if let RuntimeError::HistoryOperationFailed { message, .. } = &e {
+                if let RuntimeError::HistoryOperationFailed {
+                    message, ..
+                } = &e
+                {
                     if message == "Reached end of execution" {
                         self.status_message = message.clone();
                         self.check_and_activate_scanf_mode();
@@ -562,7 +626,7 @@ impl App {
         match self.interpreter.step_backward() {
             Ok(()) => {
                 self.status_message = "Stepped backward".to_string();
-                self.terminal_scroll = usize::MAX;
+                self.terminal_scroll.offset = usize::MAX;
             }
             Err(e) => {
                 self.status_message = e.to_string();
@@ -580,11 +644,14 @@ impl App {
         match self.interpreter.step_over() {
             Ok(()) => {
                 self.status_message = "Stepped over".to_string();
-                self.terminal_scroll = usize::MAX;
+                self.terminal_scroll.offset = usize::MAX;
                 self.check_and_activate_scanf_mode();
             }
             Err(e) => {
-                if let RuntimeError::HistoryOperationFailed { message, .. } = &e {
+                if let RuntimeError::HistoryOperationFailed {
+                    message, ..
+                } = &e
+                {
                     if message == "Reached end of execution" {
                         self.status_message = message.clone();
                         self.check_and_activate_scanf_mode();
@@ -607,10 +674,13 @@ impl App {
         match self.interpreter.step_back_over() {
             Ok(()) => {
                 self.status_message = "Stepped back over".to_string();
-                self.terminal_scroll = usize::MAX;
+                self.terminal_scroll.offset = usize::MAX;
             }
             Err(e) => {
-                if let RuntimeError::HistoryOperationFailed { message, .. } = &e {
+                if let RuntimeError::HistoryOperationFailed {
+                    message, ..
+                } = &e
+                {
                     if message == "Reached start of execution"
                         || message == "Already at the beginning of execution"
                     {

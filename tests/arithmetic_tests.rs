@@ -58,13 +58,6 @@ fn test_pointer_arithmetic() {
 
         // Pointer difference
         int diff = p2 - p;
-        // In our current byte-wise impl, int is usually 4 bytes (if sizeof_type works correctly).
-        // Wait, current checked_sub returns BYTE difference if it doesn't know type,
-        // OR it returns byte difference anyway for now as I commented out scaling?
-        // Let's check my checked_sub implementation again.
-        // It returns (*addr - *addr2) as Value::Int(diff).
-        // It did NOT divide by size.
-        // So for int* (4 bytes), diff should be 8.
 
         printf("Diff elems: %d\n", diff);
 
@@ -77,11 +70,6 @@ fn test_pointer_arithmetic() {
 
         // Char + Pointer
         char c = 1;
-        // int *p4 = p + c; // p + 1 (byte?) or element?
-        // Since checked_add_values adds `offset` (1) to `addr` (u64), it adds 1 byte.
-        // Since `arr` is `int`, adding 1 byte to the pointer and dereferencing as int is BAD alignment.
-        // But the interpreter handles `read_bytes_at` without alignment types strictly (it uses `from_le_bytes`).
-        // So `*(p+1)` reads bytes 1,2,3,4 of arr[0]...arr[1].
 
         return 0;
     }

@@ -2,7 +2,7 @@ use crate::interpreter::engine::Interpreter;
 use crate::interpreter::errors::RuntimeError;
 use crate::memory::{sizeof_type, value::Value};
 use crate::parser::ast::{BaseType, SourceLocation, Type};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 impl Interpreter {
     /// Serialize a value to heap bytes (sequential packing, no padding)
@@ -193,7 +193,7 @@ impl Interpreter {
                     })?
                     .clone(); // Clone to avoid borrow checker issues
 
-                let mut fields = HashMap::new();
+                let mut fields = FxHashMap::default();
                 let mut offset = 0;
                 for field in &struct_def.fields {
                     let field_value = self.deserialize_value_from_heap(

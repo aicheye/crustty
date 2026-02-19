@@ -19,7 +19,9 @@ impl Interpreter {
             Neg => self.evaluate_neg_op(operand, location),
             Not => self.evaluate_not_op(operand, location),
             BitNot => self.evaluate_bitnot_op(operand, location),
-            PreInc | PreDec | PostInc | PostDec => self.evaluate_inc_dec_op(op, operand, location),
+            PreInc | PreDec | PostInc | PostDec => {
+                self.evaluate_inc_dec_op(op, operand, location)
+            }
             Deref => self.evaluate_deref_op(operand, location),
             AddrOf => self.evaluate_addr_of_op(operand, location),
         }
@@ -84,8 +86,12 @@ impl Interpreter {
         let one = Value::Int(1);
 
         let new_val = match op {
-            PreInc | PostInc => self.checked_add_values(&current_val, &one, location)?,
-            PreDec | PostDec => self.checked_sub_values(&current_val, &one, location)?,
+            PreInc | PostInc => {
+                self.checked_add_values(&current_val, &one, location)?
+            }
+            PreDec | PostDec => {
+                self.checked_sub_values(&current_val, &one, location)?
+            }
             _ => unreachable!(),
         };
 
@@ -126,7 +132,8 @@ impl Interpreter {
         addr: u64,
         location: SourceLocation,
     ) -> Result<Value, RuntimeError> {
-        let (base_addr, frame_depth, var_name) = self.resolve_stack_pointer(addr, location)?;
+        let (base_addr, frame_depth, var_name) =
+            self.resolve_stack_pointer(addr, location)?;
 
         let frame = self
             .stack
@@ -134,18 +141,19 @@ impl Interpreter {
             .get(frame_depth)
             .ok_or(RuntimeError::InvalidFrameDepth { location })?;
 
-        let var = frame
-            .get_var(&var_name)
-            .ok_or_else(|| RuntimeError::UndefinedVariable {
+        let var = frame.get_var(&var_name).ok_or_else(|| {
+            RuntimeError::UndefinedVariable {
                 name: var_name.clone(),
                 location,
-            })?;
+            }
+        })?;
 
         match &var.value {
             Value::Array(elements) => {
                 let offset = addr - base_addr;
                 let elem_type = var.var_type.element_type();
-                let elem_size = sizeof_type(&elem_type, &self.struct_defs) as u64;
+                let elem_size =
+                    sizeof_type(&elem_type, &self.struct_defs) as u64;
                 let idx = if elem_size > 0 { offset / elem_size } else { 0 };
 
                 if idx as usize >= elements.len() {
@@ -177,7 +185,9 @@ impl Interpreter {
                 .map_err(|e| Self::map_heap_error(e, location))?;
 
             if bytes.len() == 4 {
-                let int_val = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                let int_val = i32::from_le_bytes([
+                    bytes[0], bytes[1], bytes[2], bytes[3],
+                ]);
                 Ok(Value::Int(int_val))
             } else {
                 Err(RuntimeError::InvalidPointer {
@@ -204,7 +214,9 @@ impl Interpreter {
                 Ok(Value::Pointer(var.address))
             }
             _ => Err(RuntimeError::UnsupportedOperation {
-                message: "Address-of operator only supports variables currently".to_string(),
+                message:
+                    "Address-of operator only supports variables currently"
+                        .to_string(),
                 location,
             }),
         }

@@ -147,7 +147,11 @@ fn format_value_string<S: BuildHasher>(
                     s.push_str("...");
                     break;
                 }
-                s.push_str(&format_value_string(val, _struct_defs, _indent + 1));
+                s.push_str(&format_value_string(
+                    val,
+                    _struct_defs,
+                    _indent + 1,
+                ));
             }
             s.push(']');
             s

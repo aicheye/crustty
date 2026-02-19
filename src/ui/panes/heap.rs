@@ -17,7 +17,9 @@
 //! - **Hex Dump**: Shows raw byte values for low-level inspection
 //! - **Struct Layout**: Visualizes struct field layout with offsets
 
-use super::utils::{calculate_field_offsets, format_type_annotation, read_typed_value};
+use super::utils::{
+    calculate_field_offsets, format_type_annotation, read_typed_value,
+};
 use crate::memory::{heap::BlockState, heap::Heap, sizeof_type};
 use crate::parser::ast::{BaseType, StructDef, Type};
 use crate::ui::theme::DEFAULT_THEME;
@@ -43,6 +45,8 @@ pub struct HeapRenderData<'a, S: BuildHasher, T: BuildHasher> {
     pub pointer_types: &'a std::collections::HashMap<u64, Type, S>,
     pub struct_defs: &'a std::collections::HashMap<String, StructDef, T>,
     pub error_address: Option<u64>,
+    pub is_focused: bool,
+    pub scroll_state: &'a mut HeapScrollState,
 }
 
 /// Render the heap pane
@@ -50,10 +54,8 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
     frame: &mut Frame,
     area: Rect,
     data: HeapRenderData<S, T>,
-    is_focused: bool,
-    scroll_state: &mut HeapScrollState,
 ) {
-    let border_style = if is_focused {
+    let border_style = if data.is_focused {
         Style::default()
             .fg(DEFAULT_THEME.border_focused)
             .add_modifier(Modifier::BOLD)
@@ -73,7 +75,8 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
 
     if allocations.is_empty() {
         all_items.push(
-            ListItem::new("(no allocations)").style(Style::default().fg(DEFAULT_THEME.comment)),
+            ListItem::new("(no allocations)")
+                .style(Style::default().fg(DEFAULT_THEME.comment)),
         );
     } else {
         // Filter out tombstones (freed blocks)
@@ -94,8 +97,12 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
 
         for (i, (addr, block)) in sorted_allocs.into_iter().enumerate() {
             let _style = match block.state {
-                BlockState::Allocated => Style::default().fg(DEFAULT_THEME.success),
-                BlockState::Tombstone => Style::default().fg(DEFAULT_THEME.error),
+                BlockState::Allocated => {
+                    Style::default().fg(DEFAULT_THEME.success)
+                }
+                BlockState::Tombstone => {
+                    Style::default().fg(DEFAULT_THEME.error)
+                }
             };
 
             // Build header with type annotation if available
@@ -129,7 +136,8 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
                 // 10 chars for addr, 3 for " | ", len of size + " bytes"
                 let left_len = 10 + 3 + format!("{} bytes", block.size).len();
                 let right_len = type_str.len();
-                let padding = content_width.saturating_sub(left_len + right_len);
+                let padding =
+                    content_width.saturating_sub(left_len + right_len);
 
                 Line::from(vec![
                     Span::styled(format!("0x{:08x}", addr), addr_style),
@@ -139,7 +147,10 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
                         Style::default().fg(DEFAULT_THEME.primary),
                     ),
                     Span::raw(" ".repeat(padding)),
-                    Span::styled(type_str, Style::default().fg(DEFAULT_THEME.type_name)),
+                    Span::styled(
+                        type_str,
+                        Style::default().fg(DEFAULT_THEME.type_name),
+                    ),
                 ])
             };
             all_items.push(ListItem::new(header));
@@ -149,7 +160,8 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
                 let typ_opt = data.pointer_types.get(addr);
 
                 // Check if this is a struct type
-                let is_struct = typ_opt.is_some_and(|t| matches!(t.base, BaseType::Struct(_)));
+                let is_struct = typ_opt
+                    .is_some_and(|t| matches!(t.base, BaseType::Struct(_)));
 
                 if is_struct {
                     // Show struct with field annotations
@@ -158,9 +170,13 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
                         ..
                     }) = typ_opt
                     {
-                        if let Some(struct_def) = data.struct_defs.get(struct_name) {
-                            let field_info =
-                                calculate_field_offsets(&struct_def.fields, data.struct_defs);
+                        if let Some(struct_def) =
+                            data.struct_defs.get(struct_name)
+                        {
+                            let field_info = calculate_field_offsets(
+                                &struct_def.fields,
+                                data.struct_defs,
+                            );
                             let max_field_len = field_info
                                 .iter()
                                 .map(|(n, _, _, _)| n.len())
@@ -176,16 +192,22 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
                                 .unwrap_or(4);
                             let target_hex_width = max_field_size * 3; // Each byte is "XX "
 
-                            for (field_name, offset, size, field_type) in field_info {
+                            for (field_name, offset, size, field_type) in
+                                field_info
+                            {
                                 // Show hex dump for this field
                                 let field_end = (offset + size).min(block.size);
 
                                 // Build hex part with full address
                                 let full_addr = *addr + offset as u64;
-                                let mut hex_part = format!("  0x{:08x}: ", full_addr);
+                                let mut hex_part =
+                                    format!("  0x{:08x}: ", full_addr);
                                 for i in offset..field_end {
                                     if block.init_map[i] {
-                                        hex_part.push_str(&format!("{:02x} ", block.data[i]));
+                                        hex_part.push_str(&format!(
+                                            "{:02x} ",
+                                            block.data[i]
+                                        ));
                                     } else {
                                         hex_part.push_str("?? ");
                                     }
@@ -195,7 +217,8 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
                                 // hex_part starts with "  0xADDR: " (14 chars), so target length is 14 + target_hex_width
                                 let target_len = 14 + target_hex_width;
                                 if hex_part.len() < target_len {
-                                    let padding = " ".repeat(target_len - hex_part.len());
+                                    let padding =
+                                        " ".repeat(target_len - hex_part.len());
                                     hex_part.push_str(&padding);
                                 }
 
@@ -207,72 +230,99 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
                                     data.struct_defs,
                                 );
                                 let mut annotation_spans = vec![
-                                    Span::styled("=> ", Style::default().fg(DEFAULT_THEME.comment)),
-                                    Span::styled(".", Style::default().fg(DEFAULT_THEME.fg)),
                                     Span::styled(
-                                        format!("{:<width$} : ", field_name, width = max_field_len),
+                                        "=> ",
+                                        Style::default()
+                                            .fg(DEFAULT_THEME.comment),
+                                    ),
+                                    Span::styled(
+                                        ".",
+                                        Style::default().fg(DEFAULT_THEME.fg),
+                                    ),
+                                    Span::styled(
+                                        format!(
+                                            "{:<width$} : ",
+                                            field_name,
+                                            width = max_field_len
+                                        ),
                                         Style::default().fg(DEFAULT_THEME.fg),
                                     ),
                                 ];
 
-                                let mut annotation_len = 3 + 1 + max_field_len + 3; // "=> " + "." + padded_field_name + " : "
+                                let mut annotation_len =
+                                    3 + 1 + max_field_len + 3; // "=> " + "." + padded_field_name + " : "
 
                                 if let Some(ref val) = value_str_opt {
                                     if val == "NULL" {
                                         annotation_spans.push(Span::styled(
                                             "NULL",
-                                            Style::default().fg(DEFAULT_THEME.error),
+                                            Style::default()
+                                                .fg(DEFAULT_THEME.error),
                                         ));
                                         annotation_len += 4;
                                     } else if val.starts_with("[") {
                                         // Uninitialized or partially initialized value
                                         annotation_spans.push(Span::styled(
                                             val.clone(),
-                                            Style::default().fg(DEFAULT_THEME.error),
+                                            Style::default()
+                                                .fg(DEFAULT_THEME.error),
                                         ));
                                         annotation_len += val.len();
                                     } else {
                                         annotation_spans.push(Span::styled(
                                             val.clone(),
-                                            Style::default().fg(DEFAULT_THEME.secondary),
+                                            Style::default()
+                                                .fg(DEFAULT_THEME.secondary),
                                         ));
                                         annotation_len += val.len();
                                     }
                                 } else {
                                     annotation_spans.push(Span::styled(
                                         "?",
-                                        Style::default().fg(DEFAULT_THEME.comment),
+                                        Style::default()
+                                            .fg(DEFAULT_THEME.comment),
                                     ));
                                     annotation_len += 1;
                                 }
 
                                 // Check available width to decide layout
-                                let max_width = area.width.saturating_sub(4) as usize; // Borders/padding
+                                let max_width =
+                                    area.width.saturating_sub(4) as usize; // Borders/padding
                                 let hex_len = hex_part.len();
                                 let indent_len = 2; // "  " spacing
 
-                                if hex_len + indent_len + annotation_len <= max_width {
+                                if hex_len + indent_len + annotation_len
+                                    <= max_width
+                                {
                                     // Single line layout
                                     let mut line_spans = vec![
                                         Span::styled(
                                             hex_part,
-                                            Style::default().fg(DEFAULT_THEME.comment),
+                                            Style::default()
+                                                .fg(DEFAULT_THEME.comment),
                                         ),
                                         Span::raw("  "),
                                     ];
                                     line_spans.extend(annotation_spans);
-                                    all_items.push(ListItem::new(Line::from(line_spans)));
+                                    all_items.push(ListItem::new(Line::from(
+                                        line_spans,
+                                    )));
                                 } else {
                                     // Multi-line layout
                                     all_items.push(
-                                        ListItem::new(hex_part)
-                                            .style(Style::default().fg(DEFAULT_THEME.comment)),
+                                        ListItem::new(hex_part).style(
+                                            Style::default()
+                                                .fg(DEFAULT_THEME.comment),
+                                        ),
                                     );
 
-                                    let mut next_line_spans = vec![Span::raw("          ")]; // Indent
+                                    let mut next_line_spans =
+                                        vec![Span::raw("          ")]; // Indent
                                     next_line_spans.extend(annotation_spans);
 
-                                    all_items.push(ListItem::new(Line::from(next_line_spans)));
+                                    all_items.push(ListItem::new(Line::from(
+                                        next_line_spans,
+                                    )));
                                 }
                             }
                         }
@@ -290,14 +340,19 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
 
                             for elem_idx in 0..num_elements {
                                 let offset = elem_idx * elem_size;
-                                let elem_end = (offset + elem_size).min(block.size);
+                                let elem_end =
+                                    (offset + elem_size).min(block.size);
 
                                 // Build hex part for this element with full address
                                 let full_addr = *addr + offset as u64;
-                                let mut hex_part = format!("  0x{:08x}: ", full_addr);
+                                let mut hex_part =
+                                    format!("  0x{:08x}: ", full_addr);
                                 for i in offset..elem_end {
                                     if block.init_map[i] {
-                                        hex_part.push_str(&format!("{:02x} ", block.data[i]));
+                                        hex_part.push_str(&format!(
+                                            "{:02x} ",
+                                            block.data[i]
+                                        ));
                                     } else {
                                         hex_part.push_str("?? ");
                                     }
@@ -306,7 +361,8 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
                                 // Pad hex part for alignment
                                 let target_len = 14 + target_hex_width;
                                 if hex_part.len() < target_len {
-                                    let padding = " ".repeat(target_len - hex_part.len());
+                                    let padding =
+                                        " ".repeat(target_len - hex_part.len());
                                     hex_part.push_str(&padding);
                                 }
 
@@ -324,99 +380,125 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
                                 ) {
                                     line_spans.push(Span::styled(
                                         "  => ",
-                                        Style::default().fg(DEFAULT_THEME.comment),
+                                        Style::default()
+                                            .fg(DEFAULT_THEME.comment),
                                     ));
                                     if value_str == "NULL" {
                                         line_spans.push(Span::styled(
                                             value_str,
-                                            Style::default().fg(DEFAULT_THEME.error),
+                                            Style::default()
+                                                .fg(DEFAULT_THEME.error),
                                         ));
                                     } else if value_str.starts_with("[") {
                                         // Uninitialized or partially initialized value
                                         line_spans.push(Span::styled(
                                             value_str,
-                                            Style::default().fg(DEFAULT_THEME.error),
+                                            Style::default()
+                                                .fg(DEFAULT_THEME.error),
                                         ));
                                     } else {
                                         line_spans.push(Span::styled(
                                             value_str,
-                                            Style::default().fg(DEFAULT_THEME.secondary),
+                                            Style::default()
+                                                .fg(DEFAULT_THEME.secondary),
                                         ));
                                     }
                                 }
 
-                                all_items.push(ListItem::new(Line::from(line_spans)));
+                                all_items.push(ListItem::new(Line::from(
+                                    line_spans,
+                                )));
                             }
 
                             // If there are remaining bytes that don't fit in an element, show them
                             let remaining_offset = num_elements * elem_size;
                             if remaining_offset < block.size {
                                 let full_addr = *addr + remaining_offset as u64;
-                                let mut hex_part = format!("  0x{:08x}: ", full_addr);
+                                let mut hex_part =
+                                    format!("  0x{:08x}: ", full_addr);
                                 for i in remaining_offset..block.size {
                                     if block.init_map[i] {
-                                        hex_part.push_str(&format!("{:02x} ", block.data[i]));
+                                        hex_part.push_str(&format!(
+                                            "{:02x} ",
+                                            block.data[i]
+                                        ));
                                     } else {
                                         hex_part.push_str("?? ");
                                     }
                                 }
-                                all_items.push(
-                                    ListItem::new(hex_part)
-                                        .style(Style::default().fg(DEFAULT_THEME.comment)),
-                                );
+                                all_items.push(ListItem::new(hex_part).style(
+                                    Style::default().fg(DEFAULT_THEME.comment),
+                                ));
                             }
                         } else {
                             // Fallback: element size is 0 or invalid, show raw hex dump
-                            let available_width = area.width.saturating_sub(40) as usize;
-                            let max_bytes_per_line = (available_width / 3).max(1);
+                            let available_width =
+                                area.width.saturating_sub(40) as usize;
+                            let max_bytes_per_line =
+                                (available_width / 3).max(1);
                             let bytes_per_line = 16.min(max_bytes_per_line);
 
-                            for line_start in (0..block.size).step_by(bytes_per_line) {
-                                let line_end = (line_start + bytes_per_line).min(block.size);
+                            for line_start in
+                                (0..block.size).step_by(bytes_per_line)
+                            {
+                                let line_end = (line_start + bytes_per_line)
+                                    .min(block.size);
                                 let full_addr = *addr + line_start as u64;
-                                let mut hex_part = format!("  0x{:08x}: ", full_addr);
+                                let mut hex_part =
+                                    format!("  0x{:08x}: ", full_addr);
                                 for i in line_start..line_end {
                                     if block.init_map[i] {
-                                        hex_part.push_str(&format!("{:02x} ", block.data[i]));
+                                        hex_part.push_str(&format!(
+                                            "{:02x} ",
+                                            block.data[i]
+                                        ));
                                     } else {
                                         hex_part.push_str("?? ");
                                     }
                                 }
-                                all_items.push(
-                                    ListItem::new(hex_part)
-                                        .style(Style::default().fg(DEFAULT_THEME.comment)),
-                                );
+                                all_items.push(ListItem::new(hex_part).style(
+                                    Style::default().fg(DEFAULT_THEME.comment),
+                                ));
                             }
                         }
                     } else {
                         // No type info, show raw hex dump
-                        let available_width = area.width.saturating_sub(40) as usize;
+                        let available_width =
+                            area.width.saturating_sub(40) as usize;
                         let max_bytes_per_line = (available_width / 3).max(1);
                         let bytes_per_line = 16.min(max_bytes_per_line);
 
-                        for line_start in (0..block.size).step_by(bytes_per_line) {
-                            let line_end = (line_start + bytes_per_line).min(block.size);
+                        for line_start in
+                            (0..block.size).step_by(bytes_per_line)
+                        {
+                            let line_end =
+                                (line_start + bytes_per_line).min(block.size);
                             let full_addr = *addr + line_start as u64;
-                            let mut hex_part = format!("  0x{:08x}: ", full_addr);
+                            let mut hex_part =
+                                format!("  0x{:08x}: ", full_addr);
                             for i in line_start..line_end {
                                 if block.init_map[i] {
-                                    hex_part.push_str(&format!("{:02x} ", block.data[i]));
+                                    hex_part.push_str(&format!(
+                                        "{:02x} ",
+                                        block.data[i]
+                                    ));
                                 } else {
                                     hex_part.push_str("?? ");
                                 }
                             }
-                            all_items.push(
-                                ListItem::new(hex_part)
-                                    .style(Style::default().fg(DEFAULT_THEME.comment)),
-                            );
+                            all_items.push(ListItem::new(hex_part).style(
+                                Style::default().fg(DEFAULT_THEME.comment),
+                            ));
                         }
                     }
                 }
             }
 
             if i < alloc_count - 1 {
-                let separator =
-                    Line::from(Span::styled("", Style::default().fg(DEFAULT_THEME.comment)));
+                let separator = Line::from(Span::styled(
+                    "",
+                    Style::default().fg(DEFAULT_THEME.comment),
+                ));
                 all_items.push(ListItem::new(separator));
             }
         }
@@ -427,30 +509,30 @@ pub fn render_heap_pane<S: BuildHasher, T: BuildHasher>(
     let visible_height = area.height.saturating_sub(2).max(1) as usize; // Account for borders, min 1
 
     // Smart auto-scroll: scroll to bottom only when content grows (new allocation)
-    if total_items > scroll_state.prev_item_count {
+    if total_items > data.scroll_state.prev_item_count {
         // Content grew (new allocation), auto-scroll to bottom
         if total_items > visible_height {
-            scroll_state.offset = total_items - visible_height;
+            data.scroll_state.offset = total_items - visible_height;
         } else {
-            scroll_state.offset = 0;
+            data.scroll_state.offset = 0;
         }
     } else {
         // Content same or shrank, respect user's scroll position (just clamp)
         if total_items > visible_height {
             let max_scroll = total_items - visible_height;
-            scroll_state.offset = scroll_state.offset.min(max_scroll);
+            data.scroll_state.offset = data.scroll_state.offset.min(max_scroll);
         } else {
-            scroll_state.offset = 0;
+            data.scroll_state.offset = 0;
         }
     }
 
     // Update previous item count for next render
-    scroll_state.prev_item_count = total_items;
+    data.scroll_state.prev_item_count = total_items;
 
     // Take only visible items
     let visible_items: Vec<ListItem> = all_items
         .into_iter()
-        .skip(scroll_state.offset)
+        .skip(data.scroll_state.offset)
         .take(visible_height)
         .collect();
 

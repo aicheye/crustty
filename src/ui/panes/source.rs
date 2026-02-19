@@ -85,7 +85,9 @@ fn highlight_source_code(line: &str) -> Line<'_> {
 
             // Color some operators/delimiters
             let style = match c {
-                '{' | '}' | '(' | ')' | '[' | ']' => Style::default().fg(DEFAULT_THEME.primary), // Brackets
+                '{' | '}' | '(' | ')' | '[' | ']' => {
+                    Style::default().fg(DEFAULT_THEME.primary)
+                } // Brackets
                 ';' => Style::default().fg(DEFAULT_THEME.fg), // Semicolons
                 ',' => Style::default().fg(DEFAULT_THEME.fg),
                 '.' => Style::default().fg(DEFAULT_THEME.fg),
@@ -114,12 +116,13 @@ fn highlight_source_code(line: &str) -> Line<'_> {
 
 fn get_keyword_style(word: &str, is_function: bool) -> Style {
     match word {
-        "int" | "char" | "void" | "bool" | "float" | "double" | "long" | "short" | "unsigned"
-        | "signed" => {
+        "int" | "char" | "void" | "bool" | "float" | "double" | "long"
+        | "short" | "unsigned" | "signed" => {
             Style::default().fg(DEFAULT_THEME.type_name) // Types
         }
-        "struct" | "return" | "if" | "else" | "while" | "for" | "do" | "switch" | "case"
-        | "default" | "break" | "continue" | "goto" | "sizeof" => {
+        "struct" | "return" | "if" | "else" | "while" | "for" | "do"
+        | "switch" | "case" | "default" | "break" | "continue" | "goto"
+        | "sizeof" => {
             Style::default()
                 .fg(DEFAULT_THEME.keyword)
                 .add_modifier(Modifier::BOLD) // Keywords
@@ -141,19 +144,23 @@ pub struct SourceScrollState {
     pub target_line_row: Option<usize>,
 }
 
+/// Data required to render the source pane
+pub struct SourceRenderData<'a> {
+    pub source_code: &'a str,
+    pub current_line: usize,
+    pub is_error: bool,
+    pub is_scanf: bool,
+    pub is_focused: bool,
+    pub scroll_state: &'a mut SourceScrollState,
+}
+
 /// Render the source code pane
-#[allow(clippy::too_many_arguments)]
 pub fn render_source_pane(
     frame: &mut Frame,
     area: Rect,
-    source_code: &str,
-    current_line: usize,
-    is_error: bool,
-    is_scanf: bool,
-    is_focused: bool,
-    scroll_state: &mut SourceScrollState,
+    data: SourceRenderData,
 ) {
-    let border_style = if is_focused {
+    let border_style = if data.is_focused {
         Style::default()
             .fg(DEFAULT_THEME.border_focused)
             .add_modifier(Modifier::BOLD)
@@ -166,42 +173,57 @@ pub fn render_source_pane(
         .borders(Borders::ALL)
         .border_style(border_style);
 
-    let lines: Vec<&str> = source_code.lines().collect();
+    let lines: Vec<&str> = data.source_code.lines().collect();
     let total_lines = lines.len();
 
     // Calculate visible range
     let visible_height = area.height.saturating_sub(2).max(1) as usize; // Account for borders (2), min 1
 
     // Initialize target_line_row to center if not set
-    if scroll_state.target_line_row.is_none() {
-        scroll_state.target_line_row = Some(visible_height / 2);
+    if data.scroll_state.target_line_row.is_none() {
+        data.scroll_state.target_line_row = Some(visible_height / 2);
     }
 
     // Get the target row, clamping to stay within visible area
-    let target_row = scroll_state
+    let target_row = data
+        .scroll_state
         .target_line_row
         .unwrap()
         .min(visible_height.saturating_sub(1));
-    scroll_state.target_line_row = Some(target_row);
+    data.scroll_state.target_line_row = Some(target_row);
 
     // Calculate scroll offset to keep current line at target visual row
+    let current_line = data.current_line;
     if current_line > 0 && current_line <= total_lines {
         let target_line_idx = current_line.saturating_sub(1); // Convert to 0-based
-        scroll_state.offset = target_line_idx.saturating_sub(target_row);
+        let offset = target_line_idx.saturating_sub(target_row);
 
         // Clamp scroll offset to valid range
         if total_lines > visible_height {
             let max_scroll = total_lines - visible_height;
-            scroll_state.offset = scroll_state.offset.min(max_scroll);
+            data.scroll_state.offset = offset.min(max_scroll);
         } else {
-            scroll_state.offset = 0;
+            data.scroll_state.offset = 0;
+        }
+    } else {
+        // Ensure offset is valid even if current_line is invalid
+        if total_lines > visible_height {
+            let max_scroll = total_lines - visible_height;
+            data.scroll_state.offset = data.scroll_state.offset.min(max_scroll);
+        } else {
+            data.scroll_state.offset = 0;
         }
     }
+
+    // Capture variables needed for closure
+    let is_error = data.is_error;
+    let is_scanf = data.is_scanf;
+    // current_line is already captured above
 
     let visible_lines: Vec<Line> = lines
         .iter()
         .enumerate()
-        .skip(scroll_state.offset)
+        .skip(data.scroll_state.offset)
         .take(visible_height)
         .map(|(idx, line)| {
             let line_num = idx + 1;
@@ -209,7 +231,7 @@ pub fn render_source_pane(
             let line_num_str = format!("{:4} ", line_num);
 
             // Base style for the line
-            let (num_style, content_base_style) = if is_error {
+            let (num_style, content_base_style) = if is_error && is_current {
                 // ERROR LINE: Red background with bold line number
                 (
                     Style::default()
@@ -220,7 +242,7 @@ pub fn render_source_pane(
                         .fg(ratatui::style::Color::White) // White text on red for visibility
                         .add_modifier(Modifier::BOLD),
                 )
-            } else if is_scanf {
+            } else if is_scanf && is_current {
                 // SCANF LINE: Secondary background with bold line number
                 (
                     Style::default()
@@ -249,7 +271,7 @@ pub fn render_source_pane(
             let mut content_line = highlight_source_code(line);
 
             // Apply background style
-            if is_error {
+            if is_error && is_current {
                 // For error lines, override all styling with error style
                 for span in &mut content_line.spans {
                     span.style = content_base_style;

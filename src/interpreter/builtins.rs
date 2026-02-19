@@ -27,12 +27,12 @@ fn expect_int_arg(
     specifier: char,
     location: SourceLocation,
 ) -> Result<i32, RuntimeError> {
-    let val = args
-        .get(arg_index)
-        .ok_or_else(|| RuntimeError::InvalidPrintfFormat {
+    let val = args.get(arg_index).ok_or_else(|| {
+        RuntimeError::InvalidPrintfFormat {
             message: "Not enough arguments for format string".to_string(),
             location,
-        })?;
+        }
+    })?;
     match val {
         Value::Int(n) => Ok(*n),
         Value::Char(c) => Ok(*c as i32),
@@ -60,7 +60,8 @@ impl Interpreter {
             AstNode::StringLiteral(s, _) => s.clone(),
             _ => {
                 return Err(RuntimeError::InvalidPrintfFormat {
-                    message: "printf format must be a string literal".to_string(),
+                    message: "printf format must be a string literal"
+                        .to_string(),
                     location,
                 });
             }
@@ -95,22 +96,26 @@ impl Interpreter {
                     match next_ch {
                         '%' => output.push('%'),
                         'd' => {
-                            let n = expect_int_arg(args, arg_index, 'd', location)?;
+                            let n =
+                                expect_int_arg(args, arg_index, 'd', location)?;
                             output.push_str(&n.to_string());
                             arg_index += 1;
                         }
                         'u' => {
-                            let n = expect_int_arg(args, arg_index, 'u', location)?;
+                            let n =
+                                expect_int_arg(args, arg_index, 'u', location)?;
                             output.push_str(&(n as u32).to_string());
                             arg_index += 1;
                         }
                         'x' => {
-                            let n = expect_int_arg(args, arg_index, 'x', location)?;
+                            let n =
+                                expect_int_arg(args, arg_index, 'x', location)?;
                             output.push_str(&format!("{:x}", n as u32));
                             arg_index += 1;
                         }
                         'c' => {
-                            let n = expect_int_arg(args, arg_index, 'c', location)?;
+                            let n =
+                                expect_int_arg(args, arg_index, 'c', location)?;
                             output.push((n as u8) as char);
                             arg_index += 1;
                         }
@@ -123,30 +128,39 @@ impl Interpreter {
                             }
                             match &args[arg_index] {
                                 Value::Pointer(addr) => {
-                                    let string = self.read_string_from_heap(*addr, location)?;
+                                    let string = self.read_string_from_heap(
+                                        *addr, location,
+                                    )?;
                                     output.push_str(&string);
                                 }
                                 _ => {
-                                    return Err(RuntimeError::InvalidPrintfFormat {
-                                        message: format!(
-                                            "%s expects pointer, got {:?}",
-                                            args[arg_index]
-                                        ),
-                                        location,
-                                    });
+                                    return Err(
+                                        RuntimeError::InvalidPrintfFormat {
+                                            message: format!(
+                                                "%s expects pointer, got {:?}",
+                                                args[arg_index]
+                                            ),
+                                            location,
+                                        },
+                                    );
                                 }
                             }
                             arg_index += 1;
                         }
                         'n' => {
                             return Err(RuntimeError::UnsupportedOperation {
-                                message: "%n format specifier not yet implemented".to_string(),
+                                message:
+                                    "%n format specifier not yet implemented"
+                                        .to_string(),
                                 location,
                             });
                         }
                         _ => {
                             return Err(RuntimeError::InvalidPrintfFormat {
-                                message: format!("Unsupported format specifier: %{}", next_ch),
+                                message: format!(
+                                    "Unsupported format specifier: %{}",
+                                    next_ch
+                                ),
                                 location,
                             });
                         }
@@ -202,7 +216,8 @@ impl Interpreter {
 
             if bytes.len() > 10000 {
                 return Err(RuntimeError::InvalidString {
-                    message: "String too long or missing null terminator".to_string(),
+                    message: "String too long or missing null terminator"
+                        .to_string(),
                     location,
                 });
             }
@@ -232,13 +247,15 @@ impl Interpreter {
             AstNode::StringLiteral(s, _) => s.clone(),
             _ => {
                 return Err(RuntimeError::InvalidPrintfFormat {
-                    message: "scanf format must be a string literal".to_string(),
+                    message: "scanf format must be a string literal"
+                        .to_string(),
                     location,
                 });
             }
         };
 
-        let matched = self.parse_scanf_input(&format_str, &args[1..], location)?;
+        let matched =
+            self.parse_scanf_input(&format_str, &args[1..], location)?;
         Ok(Value::Int(matched as i32))
     }
 
@@ -328,7 +345,8 @@ impl Interpreter {
         }
 
         // Echo all tokens consumed by this scanf call to the terminal
-        let echo = self.stdin_tokens[initial_index..self.stdin_token_index].join(" ");
+        let echo =
+            self.stdin_tokens[initial_index..self.stdin_token_index].join(" ");
         if !echo.is_empty() {
             self.terminal.print_input(format!("{}\n", echo), location);
         }
@@ -399,7 +417,10 @@ impl Interpreter {
         let size = match size_val {
             Value::Int(n) if n > 0 => n as usize,
             Value::Int(n) => {
-                return Err(RuntimeError::InvalidMallocSize { size: n, location });
+                return Err(RuntimeError::InvalidMallocSize {
+                    size: n,
+                    location,
+                });
             }
             _ => {
                 return Err(RuntimeError::TypeError {
@@ -410,13 +431,12 @@ impl Interpreter {
             }
         };
 
-        let addr = self
-            .heap
-            .allocate(size)
-            .map_err(|_| RuntimeError::OutOfMemory {
+        let addr = self.heap.allocate(size).map_err(|_| {
+            RuntimeError::OutOfMemory {
                 requested: size,
                 limit: self.heap.max_size(),
-            })?;
+            }
+        })?;
 
         Ok(Value::Pointer(addr))
     }

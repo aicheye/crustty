@@ -956,3 +956,239 @@ fn test_switch_snapshots() {
 
     assert!(result.is_ok(), "Execution failed: {:?}", result);
 }
+
+// ─── Output-asserting tests ──────────────────────────────────────────────────
+// Each test below asserts the exact terminal output, providing stronger behavioral
+// guarantees than the `result.is_ok()` checks above.
+
+fn run_and_collect_output(source: &str) -> Vec<String> {
+    use crustty::snapshot::TerminalLineKind;
+    let mut parser = Parser::new(source).expect("Parser creation failed");
+    let program = parser.parse_program().expect("Parsing failed");
+    let mut interpreter = Interpreter::new(program, 64 * 1024 * 1024);
+    interpreter.run().expect("Execution failed");
+    // Filter to Output-kind lines only (excludes echoed stdin from scanf)
+    interpreter
+        .terminal()
+        .get_output()
+        .into_iter()
+        .filter_map(|(s, kind)| {
+            if kind == TerminalLineKind::Output {
+                Some(s)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn test_printf_format_specifiers() {
+    let lines = run_and_collect_output(
+        r#"
+        int main() {
+            int n = 42;
+            char c = 'Z';
+            printf("%d\n", n);
+            printf("%c\n", c);
+            printf("%x\n", 255);
+            printf("%%\n");
+            return 0;
+        }
+    "#,
+    );
+    assert_eq!(lines, vec!["42", "Z", "ff", "%"]);
+}
+
+#[test]
+fn test_while_loop_output() {
+    let lines = run_and_collect_output(
+        r#"
+        int main() {
+            int i = 0;
+            while (i < 4) {
+                printf("%d\n", i);
+                i = i + 1;
+            }
+            return 0;
+        }
+    "#,
+    );
+    assert_eq!(lines, vec!["0", "1", "2", "3"]);
+}
+
+#[test]
+fn test_compound_assignment_output() {
+    let lines = run_and_collect_output(
+        r#"
+        int main() {
+            int x = 10;
+            x += 5;
+            printf("%d\n", x);
+            x -= 3;
+            printf("%d\n", x);
+            x *= 2;
+            printf("%d\n", x);
+            x /= 4;
+            printf("%d\n", x);
+            x %= 3;
+            printf("%d\n", x);
+            return 0;
+        }
+    "#,
+    );
+    assert_eq!(lines, vec!["15", "12", "24", "6", "0"]);
+}
+
+#[test]
+fn test_for_loop_with_break_continue() {
+    let lines = run_and_collect_output(
+        r#"
+        int main() {
+            int i;
+            for (i = 0; i < 6; i += 1) {
+                if (i == 2) continue;
+                if (i == 5) break;
+                printf("%d\n", i);
+            }
+            return 0;
+        }
+    "#,
+    );
+    assert_eq!(lines, vec!["0", "1", "3", "4"]);
+}
+
+#[test]
+fn test_recursive_function_output() {
+    let lines = run_and_collect_output(
+        r#"
+        int factorial(int n) {
+            if (n <= 1) return 1;
+            return n * factorial(n - 1);
+        }
+        int main() {
+            printf("%d\n", factorial(5));
+            printf("%d\n", factorial(10));
+            return 0;
+        }
+    "#,
+    );
+    assert_eq!(lines, vec!["120", "3628800"]);
+}
+
+#[test]
+fn test_struct_printf_output() {
+    let lines = run_and_collect_output(
+        r#"
+        struct Point {
+            int x;
+            int y;
+        };
+        int main() {
+            struct Point p;
+            p.x = 3;
+            p.y = 7;
+            printf("x=%d y=%d\n", p.x, p.y);
+            return 0;
+        }
+    "#,
+    );
+    assert_eq!(lines, vec!["x=3 y=7"]);
+}
+
+#[test]
+fn test_switch_fallthrough_output() {
+    let lines = run_and_collect_output(
+        r#"
+        int main() {
+            int v = 2;
+            switch (v) {
+                case 1:
+                    printf("one\n");
+                    break;
+                case 2:
+                    printf("two\n");
+                case 3:
+                    printf("three\n");
+                    break;
+                default:
+                    printf("other\n");
+            }
+            return 0;
+        }
+    "#,
+    );
+    // case 2 has no break, so execution falls through into case 3
+    assert_eq!(lines, vec!["two", "three"]);
+}
+
+#[test]
+fn test_scanf_basic() {
+    let source = r#"
+        int main() {
+            int x;
+            int y;
+            scanf("%d %d", &x, &y);
+            printf("%d\n", x + y);
+            return 0;
+        }
+    "#;
+    let mut parser = Parser::new(source).expect("Parser creation failed");
+    let program = parser.parse_program().expect("Parsing failed");
+    let mut interpreter = Interpreter::new(program, 64 * 1024 * 1024);
+
+    interpreter.run().expect("Initial run failed");
+    assert!(interpreter.is_paused_at_scanf(), "Expected pause at scanf");
+
+    interpreter
+        .provide_scanf_input("10 32".to_string())
+        .expect("provide_scanf_input failed");
+    assert!(interpreter.is_execution_complete());
+
+    use crustty::snapshot::TerminalLineKind;
+    let output: Vec<_> = interpreter
+        .terminal()
+        .get_output()
+        .into_iter()
+        .filter_map(|(s, kind)| {
+            if kind == TerminalLineKind::Output {
+                Some(s)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(output, vec!["42"]);
+}
+
+#[test]
+fn test_do_while_output() {
+    let lines = run_and_collect_output(
+        r#"
+        int main() {
+            int i = 0;
+            do {
+                printf("%d\n", i);
+                i += 1;
+            } while (i < 3);
+            return 0;
+        }
+    "#,
+    );
+    assert_eq!(lines, vec!["0", "1", "2"]);
+}
+
+#[test]
+fn test_ternary_output() {
+    let lines = run_and_collect_output(
+        r#"
+        int main() {
+            int x = 5;
+            printf("%d\n", x > 3 ? 1 : 0);
+            printf("%d\n", x < 3 ? 1 : 0);
+            return 0;
+        }
+    "#,
+    );
+    assert_eq!(lines, vec!["1", "0"]);
+}

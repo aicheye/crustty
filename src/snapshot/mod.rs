@@ -28,7 +28,9 @@ impl MockTerminal {
     /// Append printf output (coalesces consecutive output on the same source line)
     pub fn print(&mut self, text: String, location: SourceLocation) {
         if let Some(last) = self.lines.last_mut() {
-            if last.location.line == location.line && last.kind == TerminalLineKind::Output {
+            if last.location.line == location.line
+                && last.kind == TerminalLineKind::Output
+            {
                 last.text.push_str(&text);
                 return;
             }
