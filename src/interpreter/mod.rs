@@ -9,7 +9,7 @@
 //! - [`statements`]: Statement execution (if, while, for, switch, return, variable declarations)
 //! - [`expressions`]: Expression evaluation, operators, and arithmetic
 //! - [`builtins`]: Built-in function implementations (printf, malloc, free)
-//! - [`memory_ops`]: Memory operations, assignments, heap serialization, struct field access
+//! - [`ops::assign`]: Memory operations, assignments, heap serialization, struct field access
 //! - [`type_system`]: Type inference for expressions and type compatibility
 //! - [`errors`]: Comprehensive runtime error types
 //! - [`constants`]: Interpreter constants (address spaces, size limits)
@@ -60,6 +60,9 @@ pub mod constants;
 pub mod engine;
 pub mod errors;
 pub mod expressions;
-pub mod memory_ops;
+pub mod heap_serial;
+pub mod jumps;
+pub mod loops;
+pub mod ops;
 pub mod statements;
 pub mod type_system;

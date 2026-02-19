@@ -21,6 +21,28 @@ use crate::interpreter::errors::RuntimeError;
 use crate::memory::value::Value;
 use crate::parser::ast::{AstNode, SourceLocation, UnOp};
 
+fn expect_int_arg(
+    args: &[Value],
+    arg_index: usize,
+    specifier: char,
+    location: SourceLocation,
+) -> Result<i32, RuntimeError> {
+    let val = args
+        .get(arg_index)
+        .ok_or_else(|| RuntimeError::InvalidPrintfFormat {
+            message: "Not enough arguments for format string".to_string(),
+            location,
+        })?;
+    match val {
+        Value::Int(n) => Ok(*n),
+        Value::Char(c) => Ok(*c as i32),
+        _ => Err(RuntimeError::InvalidPrintfFormat {
+            message: format!("%{specifier} expects int, got {val:?}"),
+            location,
+        }),
+    }
+}
+
 impl Interpreter {
     pub(crate) fn builtin_printf(
         &mut self,
@@ -73,88 +95,23 @@ impl Interpreter {
                     match next_ch {
                         '%' => output.push('%'),
                         'd' => {
-                            if arg_index >= args.len() {
-                                return Err(RuntimeError::InvalidPrintfFormat {
-                                    message: "Not enough arguments for format string".to_string(),
-                                    location,
-                                });
-                            }
-                            match &args[arg_index] {
-                                Value::Int(n) => output.push_str(&n.to_string()),
-                                _ => {
-                                    return Err(RuntimeError::InvalidPrintfFormat {
-                                        message: format!(
-                                            "%d expects int, got {:?}",
-                                            args[arg_index]
-                                        ),
-                                        location,
-                                    });
-                                }
-                            }
+                            let n = expect_int_arg(args, arg_index, 'd', location)?;
+                            output.push_str(&n.to_string());
                             arg_index += 1;
                         }
                         'u' => {
-                            if arg_index >= args.len() {
-                                return Err(RuntimeError::InvalidPrintfFormat {
-                                    message: "Not enough arguments for format string".to_string(),
-                                    location,
-                                });
-                            }
-                            match &args[arg_index] {
-                                Value::Int(n) => output.push_str(&(*n as u32).to_string()),
-                                _ => {
-                                    return Err(RuntimeError::InvalidPrintfFormat {
-                                        message: format!(
-                                            "%u expects int, got {:?}",
-                                            args[arg_index]
-                                        ),
-                                        location,
-                                    });
-                                }
-                            }
+                            let n = expect_int_arg(args, arg_index, 'u', location)?;
+                            output.push_str(&(n as u32).to_string());
                             arg_index += 1;
                         }
                         'x' => {
-                            if arg_index >= args.len() {
-                                return Err(RuntimeError::InvalidPrintfFormat {
-                                    message: "Not enough arguments for format string".to_string(),
-                                    location,
-                                });
-                            }
-                            match &args[arg_index] {
-                                Value::Int(n) => output.push_str(&format!("{:x}", *n as u32)),
-                                _ => {
-                                    return Err(RuntimeError::InvalidPrintfFormat {
-                                        message: format!(
-                                            "%x expects int, got {:?}",
-                                            args[arg_index]
-                                        ),
-                                        location,
-                                    });
-                                }
-                            }
+                            let n = expect_int_arg(args, arg_index, 'x', location)?;
+                            output.push_str(&format!("{:x}", n as u32));
                             arg_index += 1;
                         }
                         'c' => {
-                            if arg_index >= args.len() {
-                                return Err(RuntimeError::InvalidPrintfFormat {
-                                    message: "Not enough arguments for format string".to_string(),
-                                    location,
-                                });
-                            }
-                            match &args[arg_index] {
-                                Value::Char(c) => output.push(*c as u8 as char),
-                                Value::Int(n) => output.push((*n as u8) as char),
-                                _ => {
-                                    return Err(RuntimeError::InvalidPrintfFormat {
-                                        message: format!(
-                                            "%c expects char or int, got {:?}",
-                                            args[arg_index]
-                                        ),
-                                        location,
-                                    });
-                                }
-                            }
+                            let n = expect_int_arg(args, arg_index, 'c', location)?;
+                            output.push((n as u8) as char);
                             arg_index += 1;
                         }
                         's' => {

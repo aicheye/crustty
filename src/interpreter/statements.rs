@@ -20,7 +20,7 @@
 //! - Return statements set `return_value` and signal function exit
 //! - Switch statements support fallthrough behavior matching C semantics
 
-use crate::interpreter::engine::Interpreter;
+use crate::interpreter::engine::{ControlFlow, Interpreter};
 use crate::interpreter::errors::RuntimeError;
 use crate::memory::{sizeof_type, value::Value};
 use crate::parser::ast::*;
@@ -71,12 +71,7 @@ impl Interpreter {
                         ) -> Value {
                             if !type_.array_dims.is_empty() {
                                 let size = type_.array_dims[0].unwrap_or(0);
-                                let element_type = Type {
-                                    base: type_.base.clone(),
-                                    is_const: type_.is_const,
-                                    pointer_depth: type_.pointer_depth,
-                                    array_dims: type_.array_dims[1..].to_vec(),
-                                };
+                                let element_type = type_.element_type();
                                 let default_element =
                                     create_default_value(&element_type, struct_defs);
                                 let elements: Vec<Value> =
@@ -201,21 +196,20 @@ impl Interpreter {
         self.assign_to_lvalue(lhs, result_val, location)
     }
 
-    pub(crate) fn execute_return(
-        &mut self,
-        expr: Option<&AstNode>,
-        location: SourceLocation,
-    ) -> Result<(), RuntimeError> {
-        if let Some(ret_expr) = expr {
-            let return_val = self.evaluate_expr(ret_expr)?;
-            self.return_value = Some(return_val);
-        } else {
-            self.return_value = None;
-        }
+    fn execute_branch(&mut self, stmts: &[AstNode]) -> Result<(), RuntimeError> {
+        self.enter_scope();
+        for stmt in stmts {
+            let needs_snapshot = self.execute_statement(stmt)?;
+            if self.should_exit_block() {
+                self.exit_scope();
+                return Ok(());
+            }
 
-        self.current_location = location;
-        self.take_snapshot()?;
-        self.finished = true;
+            if needs_snapshot {
+                self.take_snapshot()?;
+            }
+        }
+        self.exit_scope();
         Ok(())
     }
 
@@ -226,301 +220,18 @@ impl Interpreter {
         else_branch: Option<&[AstNode]>,
         location: SourceLocation,
     ) -> Result<(), RuntimeError> {
-        self.current_location = location;
-        self.take_snapshot()?;
+        self.snapshot_at(location)?;
 
         let cond_val = self.evaluate_expr(condition)?;
         let cond_bool = Self::value_to_bool(&cond_val, location)?;
 
         if cond_bool {
-            self.enter_scope();
-            for stmt in then_branch {
-                let needs_snapshot = self.execute_statement(stmt)?;
-                if self.finished
-                    || self.should_break
-                    || self.should_continue
-                    || self.goto_target.is_some()
-                {
-                    self.exit_scope();
-                    return Ok(());
-                }
-
-                if needs_snapshot {
-                    self.take_snapshot()?;
-                }
-            }
-            self.exit_scope();
+            self.execute_branch(then_branch)?;
         } else if let Some(else_stmts) = else_branch {
-            self.enter_scope();
-            for stmt in else_stmts {
-                let needs_snapshot = self.execute_statement(stmt)?;
-                if self.finished
-                    || self.should_break
-                    || self.should_continue
-                    || self.goto_target.is_some()
-                {
-                    self.exit_scope();
-                    return Ok(());
-                }
-
-                if needs_snapshot {
-                    self.take_snapshot()?;
-                }
-            }
-            self.exit_scope();
+            self.execute_branch(else_stmts)?;
         }
 
         Ok(())
-    }
-
-    pub(crate) fn execute_while(
-        &mut self,
-        condition: &AstNode,
-        body: &[AstNode],
-        location: SourceLocation,
-    ) -> Result<(), RuntimeError> {
-        self.execution_depth += 1;
-        'outer_loop: loop {
-            let cond_val = self.evaluate_expr(condition)?;
-            let cond_bool = Self::value_to_bool(&cond_val, location)?;
-
-            if !cond_bool {
-                self.current_location = location;
-                self.take_snapshot()?;
-                break;
-            }
-
-            self.current_location = location;
-            self.take_snapshot()?;
-
-            self.enter_scope();
-            for stmt in body {
-                let needs_snapshot = self.execute_statement(stmt)?;
-                if self.finished || self.goto_target.is_some() {
-                    self.exit_scope();
-                    self.execution_depth -= 1;
-                    return Ok(());
-                }
-                if self.should_break {
-                    self.exit_scope();
-                    self.should_break = false;
-                    break 'outer_loop;
-                }
-                if self.should_continue {
-                    self.exit_scope();
-                    self.should_continue = false;
-                    break;
-                }
-                if needs_snapshot {
-                    self.take_snapshot()?;
-                }
-            }
-            self.exit_scope();
-        }
-        self.execution_depth -= 1;
-
-        Ok(())
-    }
-
-    pub(crate) fn execute_do_while(
-        &mut self,
-        body: &[AstNode],
-        condition: &AstNode,
-        location: SourceLocation,
-    ) -> Result<(), RuntimeError> {
-        self.execution_depth += 1;
-        'outer_loop: loop {
-            self.current_location = location;
-            self.take_snapshot()?;
-
-            self.enter_scope();
-            for stmt in body {
-                let needs_snapshot = self.execute_statement(stmt)?;
-                if self.finished || self.goto_target.is_some() {
-                    self.exit_scope();
-                    self.execution_depth -= 1;
-                    return Ok(());
-                }
-                if self.should_break {
-                    self.exit_scope();
-                    self.should_break = false;
-                    break 'outer_loop;
-                }
-                if self.should_continue {
-                    self.exit_scope();
-                    self.should_continue = false;
-                    break;
-                }
-                if needs_snapshot {
-                    self.take_snapshot()?;
-                }
-            }
-            self.exit_scope();
-
-            let cond_val = self.evaluate_expr(condition)?;
-            let cond_bool = Self::value_to_bool(&cond_val, location)?;
-
-            if !cond_bool {
-                self.current_location = location;
-                self.take_snapshot()?;
-                break;
-            }
-        }
-        self.execution_depth -= 1;
-
-        Ok(())
-    }
-
-    pub(crate) fn execute_for(
-        &mut self,
-        init: Option<&AstNode>,
-        condition: Option<&AstNode>,
-        increment: Option<&AstNode>,
-        body: &[AstNode],
-        location: SourceLocation,
-    ) -> Result<(), RuntimeError> {
-        self.enter_scope(); // Scope for init and loop variable
-
-        if let Some(init_stmt) = init {
-            let _needs_snapshot = self.execute_statement(init_stmt)?;
-        }
-
-        self.execution_depth += 1;
-        'outer_loop: loop {
-            if let Some(cond) = condition {
-                let cond_val = self.evaluate_expr(cond)?;
-                let cond_bool = Self::value_to_bool(&cond_val, location)?;
-
-                if !cond_bool {
-                    self.current_location = location;
-                    self.take_snapshot()?;
-                    break;
-                }
-            }
-
-            self.current_location = location;
-            self.take_snapshot()?;
-
-            self.enter_scope(); // Scope for body
-            for stmt in body {
-                let needs_snapshot = self.execute_statement(stmt)?;
-                if self.finished || self.goto_target.is_some() {
-                    self.exit_scope(); // Exit body scope
-                    self.exit_scope(); // Exit loop scope
-                    self.execution_depth -= 1;
-                    return Ok(());
-                }
-                if self.should_break {
-                    self.exit_scope(); // Exit body scope
-                    self.should_break = false;
-                    break 'outer_loop;
-                }
-                if self.should_continue {
-                    self.exit_scope(); // Exit body scope
-                    self.should_continue = false;
-                    break;
-                }
-                if needs_snapshot {
-                    self.take_snapshot()?;
-                }
-            }
-            self.exit_scope(); // Exit body scope
-
-            if let Some(inc) = increment {
-                self.evaluate_expr(inc)?;
-            }
-        }
-        self.execution_depth -= 1;
-        self.exit_scope(); // Exit loop scope
-
-        Ok(())
-    }
-
-    pub(crate) fn execute_switch(
-        &mut self,
-        expr: &AstNode,
-        cases: &[CaseNode],
-        location: SourceLocation,
-    ) -> Result<(), RuntimeError> {
-        use crate::parser::ast::CaseNode;
-
-        self.current_location = location;
-        self.take_snapshot()?;
-
-        let switch_val = self.evaluate_expr(expr)?;
-
-        let mut match_index: Option<usize> = None;
-        let mut default_index: Option<usize> = None;
-
-        for (i, case) in cases.iter().enumerate() {
-            match case {
-                CaseNode::Case { value, .. } => {
-                    let case_val = self.evaluate_expr(value)?;
-                    if self.values_equal(&switch_val, &case_val) {
-                        match_index = Some(i);
-                        break;
-                    }
-                }
-                CaseNode::Default { .. } => {
-                    default_index = Some(i);
-                }
-            }
-        }
-
-        let start_index = match_index.or(default_index);
-
-        if let Some(start) = start_index {
-            self.enter_scope();
-            for case in &cases[start..] {
-                let case_location = match case {
-                    CaseNode::Case { location, .. } => *location,
-                    CaseNode::Default { location, .. } => *location,
-                };
-                self.current_location = case_location;
-                self.take_snapshot()?;
-
-                let statements = match case {
-                    CaseNode::Case { statements, .. } => statements,
-                    CaseNode::Default { statements, .. } => statements,
-                };
-
-                for stmt in statements {
-                    let needs_snapshot = self.execute_statement(stmt)?;
-                    if self.finished || self.goto_target.is_some() {
-                        self.exit_scope();
-                        return Ok(());
-                    }
-
-                    if needs_snapshot {
-                        self.take_snapshot()?;
-                    }
-
-                    if self.should_break {
-                        self.should_break = false;
-                        self.exit_scope();
-                        return Ok(());
-                    }
-                    if self.should_continue {
-                        self.exit_scope();
-                        return Ok(());
-                    }
-                }
-            }
-            self.exit_scope();
-        }
-
-        Ok(())
-    }
-
-    pub(crate) fn values_equal(&self, a: &Value, b: &Value) -> bool {
-        match (a, b) {
-            (Value::Int(a), Value::Int(b)) => a == b,
-            (Value::Char(a), Value::Char(b)) => a == b,
-            (Value::Pointer(a), Value::Pointer(b)) => a == b,
-            (Value::Null, Value::Null) => true,
-            (Value::Null, Value::Pointer(0)) | (Value::Pointer(0), Value::Null) => true,
-            _ => false,
-        }
     }
 
     pub(crate) fn execute_function_call(
@@ -544,8 +255,7 @@ impl Interpreter {
         args: &[AstNode],
         location: SourceLocation,
     ) -> Result<Value, RuntimeError> {
-        self.current_location = location;
-        self.take_snapshot()?;
+        self.snapshot_at(location)?;
 
         let func_def = self.function_defs.get(name).cloned().ok_or_else(|| {
             RuntimeError::UndefinedFunction {
@@ -591,17 +301,16 @@ impl Interpreter {
             var.value = value.clone();
         }
 
-        let saved_finished = self.finished;
+        let saved_control_flow = self.control_flow.clone();
         let saved_return_value = self.return_value.clone();
-        self.finished = false;
+        self.control_flow = ControlFlow::Normal;
         self.return_value = None;
 
-        self.current_location = func_def.location;
-        self.take_snapshot()?;
+        self.snapshot_at(func_def.location)?;
 
         for stmt in &func_def.body {
             let needs_snapshot = self.execute_statement(stmt)?;
-            if self.finished {
+            if !matches!(self.control_flow, ControlFlow::Normal) {
                 break;
             }
             if needs_snapshot {
@@ -610,19 +319,19 @@ impl Interpreter {
         }
 
         // Check for unresolved goto target (label not found in function)
-        if let Some(ref label) = self.goto_target {
+        if let ControlFlow::Goto(ref label) = self.control_flow {
             let err = RuntimeError::UndefinedVariable {
                 name: format!("label '{}'", label),
                 location,
             };
-            self.goto_target = None;
+            self.control_flow = ControlFlow::Normal;
             return Err(err);
         }
 
         let return_val = self.return_value.clone().unwrap_or(Value::Int(0));
         self.stack.pop_frame();
         self.execution_depth -= 1;
-        self.finished = saved_finished;
+        self.control_flow = saved_control_flow;
         self.return_value = saved_return_value;
         self.current_location = location;
 

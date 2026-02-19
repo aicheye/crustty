@@ -67,19 +67,13 @@ impl Parser {
 
         let name = self.expect_identifier()?;
 
-        self.expect_token(
-            &Token::LBrace(self.current_location()),
-            "Expected '{' after struct name",
-        )?;
+        self.expect_lbrace("after struct name")?;
 
         let mut fields = Vec::new();
         while !self.check(&Token::RBrace(self.current_location())) {
             let field_type = self.parse_type()?;
             let field_name = self.expect_identifier()?;
-            self.expect_token(
-                &Token::Semicolon(self.current_location()),
-                "Expected ';' after struct field",
-            )?;
+            self.expect_semicolon("after struct field")?;
 
             fields.push(Field {
                 name: field_name,
@@ -87,14 +81,8 @@ impl Parser {
             });
         }
 
-        self.expect_token(
-            &Token::RBrace(self.current_location()),
-            "Expected '}' after struct fields",
-        )?;
-        self.expect_token(
-            &Token::Semicolon(self.current_location()),
-            "Expected ';' after struct definition",
-        )?;
+        self.expect_rbrace("after struct fields")?;
+        self.expect_semicolon("after struct definition")?;
 
         Ok(AstNode::StructDef {
             name,
@@ -109,28 +97,16 @@ impl Parser {
         let name = self.expect_identifier()?;
         let loc = self.previous_location();
 
-        self.expect_token(
-            &Token::LParen(self.current_location()),
-            "Expected '(' after function name",
-        )?;
+        self.expect_lparen("after function name")?;
 
         let params = self.parse_parameter_list()?;
 
-        self.expect_token(
-            &Token::RParen(self.current_location()),
-            "Expected ')' after parameters",
-        )?;
-        self.expect_token(
-            &Token::LBrace(self.current_location()),
-            "Expected '{' before function body",
-        )?;
+        self.expect_rparen("after parameters")?;
+        self.expect_lbrace("before function body")?;
 
         let body = self.parse_block_statements()?;
 
-        self.expect_token(
-            &Token::RBrace(self.current_location()),
-            "Expected '}' after function body",
-        )?;
+        self.expect_rbrace("after function body")?;
 
         Ok(AstNode::FunctionDef {
             name,

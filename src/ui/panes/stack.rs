@@ -20,6 +20,7 @@
 
 use super::utils::{
     format_type_annotation, format_value_styled, render_array_elements, render_struct_fields,
+    RenderCtx,
 };
 use crate::memory::{stack::Stack, value::Value};
 use crate::parser::ast::StructDef;
@@ -300,14 +301,18 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                             all_items.push(ListItem::new(header));
 
                             // Render array elements with addresses
+                            let ctx = RenderCtx {
+                                struct_defs: data.struct_defs,
+                                content_width,
+                            };
+                            // Render array elements with addresses
                             render_array_elements(
                                 &mut all_items,
                                 elements,
                                 &local_var.var_type,
                                 local_var.address,
                                 1, // indent level
-                                data.struct_defs,
-                                content_width,
+                                &ctx,
                             );
                         }
                         Value::Struct(fields) => {
@@ -346,14 +351,18 @@ pub fn render_stack_pane<S: BuildHasher, T: BuildHasher>(
                             all_items.push(ListItem::new(header));
 
                             // Render struct fields recursively
+                            let ctx = RenderCtx {
+                                struct_defs: data.struct_defs,
+                                content_width,
+                            };
+                            // Render struct fields recursively
                             render_struct_fields(
                                 &mut all_items,
                                 fields,
                                 &local_var.var_type,
                                 local_var.address,
                                 1, // indent level
-                                data.struct_defs,
-                                content_width,
+                                &ctx,
                             );
                         }
                         _ => {

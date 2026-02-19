@@ -17,16 +17,32 @@
 //! - [`super::statements`]: Statement execution implementation
 //! - [`super::expressions`]: Expression evaluation implementation
 //! - [`super::builtins`]: Built-in function implementations
-//! - [`super::memory_ops`]: Memory operations and struct field access
+//! - [`super::ops::assign`]: Memory operations and struct field access
 //! - [`super::type_system`]: Type inference and compatibility
 
 use crate::interpreter::constants::STACK_ADDRESS_START;
 use crate::interpreter::errors::RuntimeError;
-use crate::memory::{heap::Heap, sizeof_type, stack::Stack, value::Value};
+use crate::memory::{
+    heap::Heap,
+    sizeof_type,
+    stack::{LocalVar, Stack},
+    value::Value,
+};
 use crate::parser::ast::{StructDef as AstStructDef, *};
 use crate::snapshot::{MockTerminal, Snapshot, SnapshotManager};
 use rustc_hash::FxHashMap;
 use std::collections::BTreeMap;
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum ControlFlow {
+    #[default]
+    Normal,
+    Break,
+    Continue,
+    Return,
+    Goto(String),
+    Finished,
+}
 
 /// The main interpreter that executes a C program
 pub struct Interpreter {
@@ -57,14 +73,8 @@ pub struct Interpreter {
     /// Function definitions (name -> FunctionDef)
     pub(crate) function_defs: FxHashMap<String, FunctionDef>,
 
-    /// Whether execution has finished
-    pub(crate) finished: bool,
-
-    /// Whether a break statement was encountered (for loops and switches)
-    pub(crate) should_break: bool,
-
-    /// Whether a continue statement was encountered (for loops)
-    pub(crate) should_continue: bool,
+    /// Current execution control flow state
+    pub(crate) control_flow: ControlFlow,
 
     /// Mapping from stack addresses to (frame_depth, variable_name)
     pub(crate) stack_address_map: BTreeMap<u64, (usize, String)>,
@@ -74,9 +84,6 @@ pub struct Interpreter {
 
     /// Return value from the last function call
     pub(crate) return_value: Option<Value>,
-
-    /// Target label for goto execution (forward jumps only)
-    pub(crate) goto_target: Option<String>,
 
     /// Mapping from heap pointer addresses to their types
     pub(crate) pointer_types: FxHashMap<u64, Type>,
@@ -152,13 +159,10 @@ impl Interpreter {
             execution_depth: 0,
             struct_defs,
             function_defs,
-            finished: false,
-            should_break: false,
-            should_continue: false,
+            control_flow: ControlFlow::Normal,
             stack_address_map: BTreeMap::new(),
             next_stack_address: STACK_ADDRESS_START,
             return_value: None,
-            goto_target: None,
             pointer_types: FxHashMap::default(),
             field_info_cache: FxHashMap::default(),
             last_runtime_error: None,
@@ -168,6 +172,10 @@ impl Interpreter {
             execution_finished: false,
             snapshot_memory_limit,
         }
+    }
+
+    pub(crate) fn should_exit_block(&self) -> bool {
+        !matches!(self.control_flow, ControlFlow::Normal)
     }
 
     /// Run the program from start to finish (or until a scanf needs input)
@@ -186,13 +194,13 @@ impl Interpreter {
         self.stack.push_frame("main".to_string(), None);
 
         // Execute main function body
-        self.current_location = main_fn.location;
-        self.take_snapshot()?;
+        self.snapshot_at(main_fn.location)?;
 
         for stmt in &main_fn.body {
             match self.execute_statement(stmt) {
                 Ok(needs_snapshot) => {
-                    if !self.finished && needs_snapshot {
+                    // Only snapshot if we're continuing normal execution
+                    if matches!(self.control_flow, ControlFlow::Normal) && needs_snapshot {
                         if let Err(e) = self.take_snapshot() {
                             self.last_runtime_error = Some(e.clone());
                             return Err(e);
@@ -216,13 +224,13 @@ impl Interpreter {
                     return Err(e);
                 }
             }
-            if self.finished {
+            if !matches!(self.control_flow, ControlFlow::Normal) {
                 break;
             }
         }
 
         // Check for unresolved goto target
-        if let Some(ref label) = self.goto_target {
+        if let ControlFlow::Goto(ref label) = self.control_flow {
             let err = RuntimeError::UndefinedVariable {
                 name: format!("label '{}'", label),
                 location: self.current_location,
@@ -231,7 +239,7 @@ impl Interpreter {
             return Err(err);
         }
 
-        self.finished = true;
+        self.control_flow = ControlFlow::Finished;
         self.execution_finished = true;
         Ok(())
     }
@@ -246,13 +254,10 @@ impl Interpreter {
         self.snapshot_manager = SnapshotManager::new(self.snapshot_memory_limit);
         self.history_position = 0;
         self.execution_depth = 0;
-        self.finished = false;
-        self.should_break = false;
-        self.should_continue = false;
+        self.control_flow = ControlFlow::Normal;
         self.stack_address_map = BTreeMap::new();
         self.next_stack_address = STACK_ADDRESS_START;
         self.return_value = None;
-        self.goto_target = None;
         self.pointer_types = FxHashMap::default();
         self.last_runtime_error = None;
         self.stdin_token_index = 0;
@@ -291,11 +296,36 @@ impl Interpreter {
         self.execution_finished
     }
 
+    /// Helper to take a snapshot at a specific location
+    pub(crate) fn snapshot_at(&mut self, location: SourceLocation) -> Result<(), RuntimeError> {
+        self.current_location = location;
+        self.take_snapshot()
+    }
+
     /// Enter a new scope in the current stack frame
     pub(crate) fn enter_scope(&mut self) {
         if let Some(frame) = self.stack.current_frame_mut() {
             frame.push_scope();
         }
+    }
+
+    /// Helper to get a variable from the current stack frame
+    pub(crate) fn get_current_frame_var(
+        &self,
+        name: &str,
+        location: SourceLocation,
+    ) -> Result<&LocalVar, RuntimeError> {
+        let frame = self
+            .stack
+            .current_frame()
+            .ok_or(RuntimeError::NoStackFrame { location })?;
+
+        frame
+            .get_var(name)
+            .ok_or_else(|| RuntimeError::UndefinedVariable {
+                name: name.to_string(),
+                location,
+            })
     }
 
     /// Exit the current scope in the current stack frame
@@ -309,10 +339,10 @@ impl Interpreter {
     /// Returns true if a snapshot should be taken after this statement
     pub(crate) fn execute_statement(&mut self, stmt: &AstNode) -> Result<bool, RuntimeError> {
         // If searching for a goto label, skip statements until we find the target
-        if let Some(ref target) = self.goto_target {
+        if let ControlFlow::Goto(ref target) = self.control_flow {
             if let AstNode::Label { name, location } = stmt {
                 if name == target {
-                    self.goto_target = None;
+                    self.control_flow = ControlFlow::Normal;
                     self.current_location = *location;
                     return Ok(true);
                 }
@@ -413,11 +443,7 @@ impl Interpreter {
                 self.enter_scope();
                 for stmt in statements {
                     let needs_snapshot = self.execute_statement(stmt)?;
-                    if self.finished
-                        || self.should_break
-                        || self.should_continue
-                        || self.goto_target.is_some()
-                    {
+                    if self.should_exit_block() {
                         self.exit_scope();
                         return Ok(false);
                     }
@@ -444,12 +470,12 @@ impl Interpreter {
             }
 
             AstNode::Break { .. } => {
-                self.should_break = true;
+                self.control_flow = ControlFlow::Break;
                 Ok(true)
             }
 
             AstNode::Continue { .. } => {
-                self.should_continue = true;
+                self.control_flow = ControlFlow::Continue;
                 Ok(true)
             }
 
@@ -464,7 +490,7 @@ impl Interpreter {
 
             AstNode::Goto { label, location } => {
                 self.current_location = *location;
-                self.goto_target = Some(label.clone());
+                self.control_flow = ControlFlow::Goto(label.clone());
                 Ok(true)
             }
 
@@ -754,46 +780,6 @@ impl Interpreter {
         RuntimeError::InvalidMemoryOperation {
             message: error,
             location,
-        }
-    }
-
-    /// Coerce a value to match a target type
-    #[inline]
-    pub(crate) fn coerce_value_to_type(
-        &self,
-        value: Value,
-        target_type: &Type,
-        _location: SourceLocation,
-    ) -> Result<Value, RuntimeError> {
-        if target_type.pointer_depth > 0 || !target_type.array_dims.is_empty() {
-            return Ok(value);
-        }
-
-        match (&target_type.base, &value) {
-            (BaseType::Char, Value::Int(n)) => Ok(Value::Char((*n & 0xFF) as i8)),
-            (BaseType::Char, Value::Char(_)) => Ok(value),
-            (BaseType::Int, Value::Char(c)) => Ok(Value::Int(*c as i32)),
-            (BaseType::Int, Value::Int(_)) => Ok(value),
-            _ => Ok(value),
-        }
-    }
-
-    /// Convert a value to a boolean (for conditionals)
-    #[inline]
-    pub(crate) fn value_to_bool(
-        val: &Value,
-        location: SourceLocation,
-    ) -> Result<bool, RuntimeError> {
-        match val {
-            Value::Int(n) => Ok(*n != 0),
-            Value::Char(c) => Ok(*c != 0),
-            Value::Pointer(_) => Ok(true),
-            Value::Null => Ok(false),
-            _ => Err(RuntimeError::TypeError {
-                expected: "int or pointer".to_string(),
-                got: format!("{:?}", val),
-                location,
-            }),
         }
     }
 }
