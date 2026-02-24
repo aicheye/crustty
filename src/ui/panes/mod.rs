@@ -25,6 +25,7 @@
 mod utils;
 
 pub mod heap;
+pub mod input;
 pub mod source;
 pub mod stack;
 pub mod status;
@@ -32,6 +33,7 @@ pub mod terminal;
 
 // Re-export render functions for convenience
 pub use heap::{render_heap_pane, HeapRenderData, HeapScrollState};
+pub use input::{render_input_pane, InputRenderData, InputScrollState};
 pub use source::{render_source_pane, SourceRenderData, SourceScrollState};
 pub use stack::{render_stack_pane, StackRenderData, StackScrollState};
 pub use status::{render_status_bar, StatusRenderData};
