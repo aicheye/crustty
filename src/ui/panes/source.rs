@@ -25,7 +25,7 @@ use ratatui::{
 };
 
 /// Simple syntax highlighting for C-like C code
-fn highlight_source_code(line: &str) -> Line<'_> {
+pub fn highlight_source_code(line: &str) -> Line<'_> {
     let mut spans = Vec::new();
     let mut current_word = String::new();
 

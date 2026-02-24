@@ -3,6 +3,7 @@
 use crate::interpreter::engine::Interpreter;
 use crate::interpreter::errors::RuntimeError;
 use crate::parser::ast::SourceLocation;
+use crate::snapshot::{TerminalLine, TerminalLineKind};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     backend::Backend,
@@ -19,25 +20,42 @@ pub enum FocusedPane {
     Stack,
     Heap,
     Terminal,
+    Input,
 }
 
 impl FocusedPane {
-    /// Move focus to the next pane (clockwise: source -> terminal -> stack -> heap)
-    pub fn next(self) -> Self {
+    /// Move focus to the next pane (clockwise: source -> terminal -> input -> stack -> heap)
+    /// When `has_input` is false the Input pane is skipped.
+    pub fn next(self, has_input: bool) -> Self {
         match self {
             FocusedPane::Source => FocusedPane::Terminal,
-            FocusedPane::Terminal => FocusedPane::Stack,
+            FocusedPane::Terminal => {
+                if has_input {
+                    FocusedPane::Input
+                } else {
+                    FocusedPane::Stack
+                }
+            }
+            FocusedPane::Input => FocusedPane::Stack,
             FocusedPane::Stack => FocusedPane::Heap,
             FocusedPane::Heap => FocusedPane::Source,
         }
     }
 
     /// Move focus to the previous pane (counter-clockwise)
-    pub fn prev(self) -> Self {
+    /// When `has_input` is false the Input pane is skipped.
+    pub fn prev(self, has_input: bool) -> Self {
         match self {
             FocusedPane::Source => FocusedPane::Heap,
             FocusedPane::Terminal => FocusedPane::Source,
-            FocusedPane::Stack => FocusedPane::Terminal,
+            FocusedPane::Input => FocusedPane::Terminal,
+            FocusedPane::Stack => {
+                if has_input {
+                    FocusedPane::Input
+                } else {
+                    FocusedPane::Terminal
+                }
+            }
             FocusedPane::Heap => FocusedPane::Stack,
         }
     }
@@ -119,6 +137,8 @@ pub struct App {
     pub heap_scroll: super::panes::HeapScrollState,
     /// Terminal scroll offset
     pub terminal_scroll: super::panes::TerminalScrollState,
+    /// Input pane scroll state
+    pub input_scroll: super::panes::InputScrollState,
 
     /// Whether the app should quit
     pub should_quit: bool,
@@ -140,6 +160,12 @@ pub struct App {
 
     /// Typed text buffered while in scanf input mode
     pub scanf_input_buffer: String,
+
+    /// The full original stdin input (all lines typed by user)
+    pub original_stdin_input: String,
+
+    /// All input terminal lines, preserved across snapshot navigation
+    pub all_input_lines: Vec<TerminalLine>,
 }
 
 impl App {
@@ -162,6 +188,7 @@ impl App {
                 prev_item_count: 0,
             },
             terminal_scroll: super::panes::TerminalScrollState { offset: 0 },
+            input_scroll: super::panes::InputScrollState { offset: 0 },
             should_quit: false,
             status_message: String::from("Ready!"),
             error_state: None,
@@ -171,6 +198,8 @@ impl App {
                 .checked_sub(Duration::from_secs(1))
                 .unwrap_or(Instant::now()),
             scanf_input_buffer: String::new(),
+            original_stdin_input: String::new(),
+            all_input_lines: Vec::new(),
         }
     }
 
@@ -204,6 +233,25 @@ impl App {
                 self.status_message = "Waiting for scanf input…".to_string();
             }
         }
+    }
+
+    /// Sync all input lines from the interpreter's current terminal into
+    /// the persistent `all_input_lines` list so they survive stepping back.
+    fn sync_input_lines(&mut self) {
+        self.all_input_lines = self
+            .interpreter
+            .terminal()
+            .lines
+            .iter()
+            .filter(|l| l.kind == TerminalLineKind::Input)
+            .cloned()
+            .collect();
+    }
+
+    /// Whether the program uses scanf (has ever received input or is waiting for it).
+    fn has_scanf_input(&self) -> bool {
+        !self.all_input_lines.is_empty()
+            || self.interpreter.is_paused_at_scanf()
     }
 
     /// The total number of snapshots, or `None` when execution is paused at scanf.
@@ -314,15 +362,24 @@ impl App {
             ])
             .split(columns[0]);
 
-        let right_rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage(50),
-                Constraint::Percentage(50),
-            ])
-            .split(columns[1]);
+        let show_input_pane = self.has_scanf_input();
 
         let scanf_mode = self.is_in_scanf_input_mode();
+
+        // If the input pane is visible, split the lower-left area; otherwise
+        // the terminal gets the full width.
+        let (terminal_area, input_area) = if show_input_pane {
+            let lower_left_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(60),
+                    Constraint::Percentage(40),
+                ])
+                .split(left_rows[1]);
+            (lower_left_chunks[0], Some(lower_left_chunks[1]))
+        } else {
+            (left_rows[1], None)
+        };
 
         super::panes::render_source_pane(
             frame,
@@ -337,9 +394,10 @@ impl App {
             },
         );
 
+        // Terminal pane
         super::panes::render_terminal_pane(
             frame,
-            left_rows[1],
+            terminal_area,
             super::panes::TerminalRenderData {
                 terminal: self.interpreter.terminal(),
                 is_focused: self.focused_pane == FocusedPane::Terminal,
@@ -348,6 +406,36 @@ impl App {
                 input_buffer: &self.scanf_input_buffer,
             },
         );
+        // Input pane (only for programs that use scanf)
+        if let Some(input_area) = input_area {
+            let active_input_count = self
+                .interpreter
+                .terminal()
+                .lines
+                .iter()
+                .filter(|l| l.kind == TerminalLineKind::Input)
+                .count();
+            super::panes::render_input_pane(
+                frame,
+                input_area,
+                super::panes::InputRenderData {
+                    all_input_lines: &self.all_input_lines,
+                    active_count: active_input_count,
+                    is_focused: self.focused_pane == FocusedPane::Input,
+                    source_code: &self.source_code,
+                    scroll_state: &mut self.input_scroll,
+                },
+            );
+        }
+
+        // Right column: split vertically for stack (top) and heap (bottom)
+        let right_rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(50),
+                Constraint::Percentage(50),
+            ])
+            .split(columns[1]);
 
         super::panes::render_stack_pane(
             frame,
@@ -404,8 +492,16 @@ impl App {
             match key.code {
                 KeyCode::Enter => {
                     let input = std::mem::take(&mut self.scanf_input_buffer);
+                    if !input.is_empty() {
+                        if !self.original_stdin_input.is_empty() {
+                            self.original_stdin_input.push('\n');
+                        }
+                        self.original_stdin_input.push_str(&input);
+                    }
                     match self.interpreter.provide_scanf_input(input) {
                         Ok(()) => {
+                            // Capture any new input lines from the terminal
+                            self.sync_input_lines();
                             self.terminal_scroll.offset = usize::MAX;
                             // If another scanf is immediately reached, stay in input mode
                             self.check_and_activate_scanf_mode();
@@ -478,10 +574,12 @@ impl App {
                 self.step_back_over();
             }
             KeyCode::Tab => {
-                self.focused_pane = self.focused_pane.next();
+                let has_input = self.has_scanf_input();
+                self.focused_pane = self.focused_pane.next(has_input);
             }
             KeyCode::BackTab => {
-                self.focused_pane = self.focused_pane.prev();
+                let has_input = self.has_scanf_input();
+                self.focused_pane = self.focused_pane.prev(has_input);
             }
             KeyCode::Left => {
                 self.is_playing = false;
@@ -516,6 +614,12 @@ impl App {
                             self.terminal_scroll.offset.saturating_sub(1);
                     }
                 }
+                FocusedPane::Input => {
+                    if self.input_scroll.offset > 0 {
+                        self.input_scroll.offset =
+                            self.input_scroll.offset.saturating_sub(1);
+                    }
+                }
             },
             KeyCode::Down => match self.focused_pane {
                 FocusedPane::Source => {
@@ -535,6 +639,10 @@ impl App {
                 FocusedPane::Terminal => {
                     self.terminal_scroll.offset =
                         self.terminal_scroll.offset.saturating_add(1);
+                }
+                FocusedPane::Input => {
+                    self.input_scroll.offset =
+                        self.input_scroll.offset.saturating_add(1);
                 }
             },
             KeyCode::Char(' ') => {
