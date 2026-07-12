@@ -21,3 +21,13 @@ pub const HEAP_ADDRESS_START: u64 = 0x7fff_0000;
 /// Stack frame variables are assigned addresses beginning at this value, with
 /// each new variable bumping the counter upward within its frame.
 pub const STACK_ADDRESS_START: u64 = 0x0000_0004;
+
+/// Maximum number of simultaneously active call frames.
+///
+/// Unbounded recursion in a user program would otherwise grow the interpreter's
+/// snapshot history until it either exhausts the snapshot budget after a long
+/// delay or overflows the host's native stack. Capping the logical call depth
+/// lets us surface a clean [`crate::interpreter::errors::RuntimeError::StackOverflow`]
+/// instead. The limit is far deeper than any pedagogical example needs while
+/// staying well below the host stack's true capacity.
+pub const MAX_CALL_DEPTH: usize = 1000;

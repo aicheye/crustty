@@ -195,14 +195,16 @@ impl Interpreter {
 
             AstNode::SizeofType {
                 target_type,
-                location: _,
+                location,
             } => {
+                self.ensure_type_complete(target_type, *location)?;
                 let size = sizeof_type(target_type, &self.struct_defs);
                 Ok(Value::Int(size as i32))
             }
 
-            AstNode::SizeofExpr { expr, location: _ } => {
+            AstNode::SizeofExpr { expr, location } => {
                 let expr_type = self.infer_expr_type(expr)?;
+                self.ensure_type_complete(&expr_type, *location)?;
                 let size = sizeof_type(&expr_type, &self.struct_defs);
                 Ok(Value::Int(size as i32))
             }
