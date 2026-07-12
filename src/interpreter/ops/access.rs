@@ -191,11 +191,8 @@ impl Interpreter {
                             let elem_size =
                                 sizeof_type(&elem_type, &self.struct_defs)
                                     as u64;
-                            let start_index = if elem_size > 0 {
-                                offset / elem_size
-                            } else {
-                                0
-                            };
+                            let start_index =
+                                offset.checked_div(elem_size).unwrap_or(0);
 
                             let final_idx = (start_index as i64) + (idx as i64);
 
