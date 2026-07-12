@@ -53,6 +53,12 @@ pub enum RuntimeError {
     /// Snapshot history limit exceeded
     SnapshotLimitExceeded { current: usize, limit: usize },
 
+    /// Call-stack depth limit exceeded (e.g. unbounded recursion)
+    StackOverflow {
+        limit: usize,
+        location: SourceLocation,
+    },
+
     /// Use-after-free (accessing freed memory)
     UseAfterFree {
         address: u64,
@@ -229,6 +235,7 @@ impl RuntimeError {
                 Some(location)
             }
             RuntimeError::ScanfNeedsInput { location } => Some(location),
+            RuntimeError::StackOverflow { location, .. } => Some(location),
             RuntimeError::OutOfMemory { .. } => None,
             RuntimeError::SnapshotLimitExceeded { .. } => None,
             RuntimeError::NoMainFunction => None,
@@ -449,6 +456,13 @@ impl fmt::Display for RuntimeError {
             }
             RuntimeError::ScanfNeedsInput { location } => {
                 write!(f, "scanf needs input at line {}", location.line)
+            }
+            RuntimeError::StackOverflow { limit, location } => {
+                write!(
+                    f,
+                    "Stack overflow at line {}: call depth exceeded limit of {} (likely unbounded recursion)",
+                    location.line, limit
+                )
             }
         }
     }
