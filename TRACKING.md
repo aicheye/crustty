@@ -45,7 +45,9 @@ This document tracks all incomplete features, known limitations, and remaining t
 - [ ] **Integration Scenarios**:
   - [ ] Full run-through of `examples/default.c` checking for memory leaks.
 - [ ] **Edge Cases**:
-  - [ ] Stack overflow detection (recursion limit).
+  - [x] Stack overflow detection (recursion limit) — call depth is capped at
+    `MAX_CALL_DEPTH` and surfaces `RuntimeError::StackOverflow`; execution runs
+    on a large-stack thread so the cap fires before the native stack overflows.
   - [ ] Zero-size allocations.
 
 ## 🧊 Backlog / Future
@@ -56,6 +58,13 @@ This document tracks all incomplete features, known limitations, and remaining t
 
 ## Completed Cleanup
 
+- [x] Hardened `sizeof_type` to never panic on malformed types (unknown or
+  self-referential structs, unknown array sizes); execution paths validate
+  types up front via `Interpreter::ensure_type_complete` and surface a clean
+  `RuntimeError::StructNotDefined` / `UnsupportedOperation` instead.
+- [x] Capped recursion depth (`MAX_CALL_DEPTH`) and moved execution onto a
+  large-stack thread so unbounded recursion reports `RuntimeError::StackOverflow`
+  instead of hanging or crashing the process.
 - [x] Removed unused `RuntimeError::Generic` variant and `RuntimeError::format()` method.
 - [x] Removed unused `Theme.bg` field.
 - [x] Removed unused `MockTerminal::println`, `delete_output_from_line`, `clear` methods.
