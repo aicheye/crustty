@@ -35,7 +35,32 @@ use parser::parse::Parser;
 use ui::app::ErrorState;
 use ui::App;
 
+/// Reserved native stack for the interpreter thread.
+///
+/// The tree-walking interpreter recurses through the host stack in proportion
+/// to the C program's call depth, so a deeply recursive program can consume far
+/// more stack than the default main-thread allowance. Running the whole program
+/// on a thread with a generous stack guarantees the interpreter's call-depth cap
+/// (`MAX_CALL_DEPTH`) surfaces as a clean `RuntimeError` instead of ever
+/// overflowing the native stack.
+const INTERPRETER_STACK_SIZE: usize = 256 * 1024 * 1024;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Run everything on a worker thread with a large stack (see
+    // INTERPRETER_STACK_SIZE). `join` propagates a panic; a returned error is
+    // forwarded to the process exit.
+    let worker = std::thread::Builder::new()
+        .name("crustty".to_string())
+        .stack_size(INTERPRETER_STACK_SIZE)
+        .spawn(run_app)?;
+
+    match worker.join() {
+        Ok(result) => result.map_err(|e| -> Box<dyn std::error::Error> { e }),
+        Err(panic) => std::panic::resume_unwind(panic),
+    }
+}
+
+fn run_app() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Parse command-line arguments
     let args: Vec<String> = std::env::args().collect();
 

@@ -47,25 +47,30 @@ pub fn sizeof_type<S: BuildHasher>(
         BaseType::Int => 4,
         BaseType::Char => 1,
         BaseType::Void => 0, // sizeof(void) is technically undefined, but we use 0
-        BaseType::Struct(name) => {
-            let def = struct_defs
-                .get(name)
-                .unwrap_or_else(|| panic!("Unknown struct: {}", name));
+        BaseType::Struct(name) => match struct_defs.get(name) {
             // Sum of all field sizes (no padding)
-            def.fields
+            Some(def) => def
+                .fields
                 .iter()
                 .map(|f| sizeof_type(&f.field_type, struct_defs))
-                .sum()
-        }
+                .sum(),
+            // Unknown struct: fall back to size 0 instead of panicking, so
+            // rendering and pointer-arithmetic code can never crash on a
+            // malformed type. Execution paths validate types up front (see
+            // `Interpreter::ensure_type_complete`) and surface a clean
+            // `RuntimeError::StructNotDefined` before ever reaching here.
+            None => 0,
+        },
     };
 
-    // For arrays, multiply by dimensions
+    // For arrays, multiply by dimensions. An unknown dimension (e.g. `int a[]`)
+    // contributes a factor of 0 rather than panicking.
     if t.array_dims.is_empty() {
         base_size
     } else {
-        t.array_dims.iter().fold(base_size, |size, dim| {
-            size * dim.expect("Array size must be known for sizeof")
-        })
+        t.array_dims
+            .iter()
+            .fold(base_size, |size, dim| size * dim.unwrap_or(0))
     }
 }
 

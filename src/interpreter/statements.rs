@@ -27,6 +27,68 @@ use crate::parser::ast::*;
 use rustc_hash::FxHashMap;
 
 impl Interpreter {
+    /// Verify that `ty` is a *complete* type — every struct it names (directly
+    /// or as a by-value field) is defined, and it does not contain itself by
+    /// value. Pointer types are always complete regardless of their pointee
+    /// (a pointer to an incomplete type is valid C), so recursion through
+    /// pointer fields is intentionally skipped.
+    ///
+    /// Returns [`RuntimeError::StructNotDefined`] for an unknown struct and
+    /// [`RuntimeError::UnsupportedOperation`] for an infinitely-sized
+    /// (self-referential by value) struct. This is the gate that keeps
+    /// malformed types from reaching [`crate::memory::sizeof_type`], which
+    /// treats unknown types as zero-sized rather than erroring.
+    pub(crate) fn ensure_type_complete(
+        &self,
+        ty: &Type,
+        location: SourceLocation,
+    ) -> Result<(), RuntimeError> {
+        self.ensure_type_complete_inner(ty, location, &mut Vec::new())
+    }
+
+    fn ensure_type_complete_inner(
+        &self,
+        ty: &Type,
+        location: SourceLocation,
+        visiting: &mut Vec<String>,
+    ) -> Result<(), RuntimeError> {
+        // Pointers are complete regardless of the pointee's completeness.
+        if ty.pointer_depth > 0 {
+            return Ok(());
+        }
+
+        if let BaseType::Struct(name) = &ty.base {
+            let def = self.struct_defs.get(name).ok_or_else(|| {
+                RuntimeError::StructNotDefined {
+                    name: name.clone(),
+                    location,
+                }
+            })?;
+
+            if visiting.iter().any(|n| n == name) {
+                return Err(RuntimeError::UnsupportedOperation {
+                    message: format!(
+                        "struct '{}' contains itself by value (infinite size)",
+                        name
+                    ),
+                    location,
+                });
+            }
+
+            visiting.push(name.clone());
+            for field in &def.fields {
+                self.ensure_type_complete_inner(
+                    &field.field_type,
+                    location,
+                    visiting,
+                )?;
+            }
+            visiting.pop();
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn execute_var_decl(
         &mut self,
         name: &str,
@@ -38,6 +100,10 @@ impl Interpreter {
         if self.stack.current_frame().is_none() {
             return Err(RuntimeError::NoStackFrame { location });
         }
+
+        // Reject declarations of incomplete types (unknown or self-referential
+        // structs) before we try to size them.
+        self.ensure_type_complete(var_type, location)?;
 
         // Determine initialization state and value
         let (init_state, value) = if let Some(init_expr) = init {
@@ -298,6 +364,16 @@ impl Interpreter {
                 function: name.to_string(),
                 expected: func_def.params.len(),
                 got: args.len(),
+                location,
+            });
+        }
+
+        // Guard against unbounded recursion: cap the number of active call
+        // frames so runaway recursion fails with a clean diagnostic instead of
+        // hanging or overflowing the host's native stack.
+        if self.stack.depth() >= crate::interpreter::constants::MAX_CALL_DEPTH {
+            return Err(RuntimeError::StackOverflow {
+                limit: crate::interpreter::constants::MAX_CALL_DEPTH,
                 location,
             });
         }

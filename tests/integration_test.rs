@@ -1192,3 +1192,119 @@ fn test_ternary_output() {
     );
     assert_eq!(lines, vec!["1", "0"]);
 }
+
+// ===== Hardening regression tests =====
+
+/// Declaring a variable of an undefined struct type must produce a clean
+/// runtime error rather than panicking (previously crashed the process in
+/// `sizeof_type`).
+#[test]
+fn test_undefined_struct_decl_errors_cleanly() {
+    let source = r#"
+        int main() {
+            struct Undefined x;
+            return 0;
+        }
+    "#;
+
+    let mut parser = Parser::new(source).expect("Parser creation failed");
+    let program = parser.parse_program().expect("Parsing failed");
+
+    let mut interpreter = Interpreter::new(program, 1024 * 1024 * 100);
+    let result = interpreter.run();
+
+    assert!(result.is_err(), "Expected undefined-struct error");
+    let error_msg = format!("{:?}", result.unwrap_err());
+    assert!(
+        error_msg.contains("StructNotDefined"),
+        "Expected StructNotDefined, got: {}",
+        error_msg
+    );
+}
+
+/// `sizeof` of an undefined struct type must also error cleanly instead of
+/// panicking.
+#[test]
+fn test_sizeof_undefined_struct_errors_cleanly() {
+    let source = r#"
+        int main() {
+            int n = sizeof(struct Undefined);
+            return n;
+        }
+    "#;
+
+    let mut parser = Parser::new(source).expect("Parser creation failed");
+    let program = parser.parse_program().expect("Parsing failed");
+
+    let mut interpreter = Interpreter::new(program, 1024 * 1024 * 100);
+    let result = interpreter.run();
+
+    assert!(result.is_err(), "Expected undefined-struct error");
+    let error_msg = format!("{:?}", result.unwrap_err());
+    assert!(
+        error_msg.contains("StructNotDefined"),
+        "Expected StructNotDefined, got: {}",
+        error_msg
+    );
+}
+
+/// Unbounded recursion must terminate with a `StackOverflow` error instead of
+/// hanging or overflowing the host's native stack.
+#[test]
+fn test_infinite_recursion_errors_cleanly() {
+    let source = r#"
+        int f(int n) {
+            return f(n) + 1;
+        }
+        int main() {
+            return f(0);
+        }
+    "#;
+
+    // The interpreter recurses through the native stack in proportion to the C
+    // call depth, so — like the real binary (see `INTERPRETER_STACK_SIZE` in
+    // main.rs) — drive it on a thread with a generous stack. This guarantees the
+    // depth cap fires as a clean error rather than overflowing the small default
+    // test-thread stack first.
+    let result = std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(move || {
+            let mut parser =
+                Parser::new(source).expect("Parser creation failed");
+            let program = parser.parse_program().expect("Parsing failed");
+            let mut interpreter = Interpreter::new(program, 1024 * 1024 * 1024);
+            interpreter.run()
+        })
+        .expect("failed to spawn worker thread")
+        .join()
+        .expect("worker thread panicked");
+
+    assert!(result.is_err(), "Expected stack-overflow error");
+    let error_msg = format!("{:?}", result.unwrap_err());
+    assert!(
+        error_msg.contains("StackOverflow"),
+        "Expected StackOverflow, got: {}",
+        error_msg
+    );
+}
+
+/// Bounded recursion well within the limit must still succeed — the depth cap
+/// must not break legitimate recursive programs.
+#[test]
+fn test_bounded_recursion_still_works() {
+    let lines = run_and_collect_output(
+        r#"
+        int fib(int n) {
+            if (n < 2) {
+                return n;
+            }
+            return fib(n - 1) + fib(n - 2);
+        }
+        int main() {
+            printf("%d\n", fib(10));
+            return 0;
+        }
+    "#,
+    );
+    assert_eq!(lines, vec!["55"]);
+}
