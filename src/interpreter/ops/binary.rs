@@ -149,11 +149,8 @@ impl Interpreter {
                 } else if let Value::Pointer(addr2) = right_val {
                     let scale = self.get_pointer_scale(*addr, location)?;
                     let diff_bytes = (*addr as i64) - (*addr2 as i64);
-                    let diff_elems = if scale > 0 {
-                        diff_bytes / scale as i64
-                    } else {
-                        0
-                    };
+                    let diff_elems =
+                        diff_bytes.checked_div(scale as i64).unwrap_or(0);
                     Ok(Value::Int(diff_elems as i32))
                 } else {
                     Err(RuntimeError::TypeError {
