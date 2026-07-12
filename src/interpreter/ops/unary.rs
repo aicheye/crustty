@@ -154,7 +154,7 @@ impl Interpreter {
                 let elem_type = var.var_type.element_type();
                 let elem_size =
                     sizeof_type(&elem_type, &self.struct_defs) as u64;
-                let idx = if elem_size > 0 { offset / elem_size } else { 0 };
+                let idx = offset.checked_div(elem_size).unwrap_or(0);
 
                 if idx as usize >= elements.len() {
                     return Err(RuntimeError::BufferOverrun {
